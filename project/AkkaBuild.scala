@@ -32,7 +32,7 @@ object AkkaBuild {
         .ofPattern("yyyyMMdd-HHmmss")
         .format(ZonedDateTime.now(ZoneOffset.UTC)))
   }
-  
+
   def akkaVersion: String = {
     val default = "2.5.23"
     sys.props.getOrElse("akka.build.version", default) match {
@@ -64,7 +64,7 @@ object AkkaBuild {
       parallelExecution in GlobalScope := System.getProperty("akka.parallelExecution", parallelExecutionByDefault.toString).toBoolean,
       version in ThisBuild := akkaVersion
     )
- 
+
   lazy val mayChangeSettings = Seq(
     description := """|This module of Akka is marked as
                       |'may change', which means that it is in early
