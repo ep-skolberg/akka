@@ -2,13 +2,13 @@ name := "akka-sample-persistence-scala"
 
 isSnapshot := false
 
-version := "2.4.19-dg-1.1.0" + (if (isSnapshot.value) "-SNAPSHOT" else "")
+version := "2.4.19-dg-1.2.0" + (if (isSnapshot.value) "-SNAPSHOT" else "")
 
 scalaVersion := "2.11.8"
 
 libraryDependencies ++= Seq(
-  "com.typesafe.akka" %% "akka-actor" % ("2.4.19-dg-1.1.0" + (if (isSnapshot.value) "-SNAPSHOT" else "")),
-  "com.typesafe.akka" %% "akka-persistence" % ("2.4.19-dg-1.1.0" + (if (isSnapshot.value) "-SNAPSHOT" else "")),
+  "com.typesafe.akka" %% "akka-actor" % ("2.4.19-dg-1.2.0" + (if (isSnapshot.value) "-SNAPSHOT" else "")),
+  "com.typesafe.akka" %% "akka-persistence" % ("2.4.19-dg-1.2.0" + (if (isSnapshot.value) "-SNAPSHOT" else "")),
   "org.iq80.leveldb"            % "leveldb"          % "0.7",
   "org.fusesource.leveldbjni"   % "leveldbjni-all"   % "1.8"
 )
