@@ -34,9 +34,9 @@ object AkkaBuild {
   }
 
   def akkaVersion: String = {
-    val default = "2.5.23"
+    val default = "2.5.23-dg-1.0.0"
     sys.props.getOrElse("akka.build.version", default) match {
-      case "timestamp" => s"2.5-$currentDateTime" // used when publishing timestamped snapshots
+      case "timestamp" => s"2.5-dg-$currentDateTime" // used when publishing timestamped snapshots
       case "file" => akkaVersionFromFile(default)
       case v => v
     }
@@ -78,42 +78,6 @@ object AkkaBuild {
                       |without prior deprecation.
                       |""".stripMargin)
 
-  val (mavenLocalResolver, mavenLocalResolverSettings) =
-    System.getProperty("akka.build.M2Dir") match {
-      case null => (Resolver.mavenLocal, Seq.empty)
-      case path =>
-        // Maven resolver settings
-        def deliverPattern(outputPath: File): String =
-          (outputPath / "[artifact]-[revision](-[classifier]).[ext]").absolutePath
-
-        val resolver = Resolver.file("user-publish-m2-local", new File(path))
-        (resolver, Seq(
-          otherResolvers := resolver :: publishTo.value.toList,
-          publishM2Configuration := Classpaths.publishConfig(
-            publishMavenStyle.value,
-            deliverPattern(crossTarget.value),
-            if (isSnapshot.value) "integration" else "release",
-            ivyConfigurations.value.map(c => ConfigRef(c.name)).toVector,
-            artifacts = packagedArtifacts.value.toVector,
-            resolverName = resolver.name,
-            checksums = checksums.in(publishM2).value.toVector,
-            logging = ivyLoggingLevel.value,
-            overwrite = true)))
-    }
-
-  lazy val resolverSettings = {
-    // should we be allowed to use artifacts published to the local maven repository
-    if (System.getProperty("akka.build.useLocalMavenResolver", "false").toBoolean)
-      Seq(resolvers += mavenLocalResolver)
-    else Seq.empty
-  } ++ {
-    // should we be allowed to use artifacts from sonatype snapshots
-    if (System.getProperty("akka.build.useSnapshotSonatypeResolver", "false").toBoolean)
-      Seq(resolvers += Resolver.sonatypeRepo("snapshots"))
-    else Seq.empty
-  } ++ Seq(
-    pomIncludeRepository := (_ => false) // do not leak internal repositories during staging
-  )
 
   private def allWarnings: Boolean = System.getProperty("akka.allwarnings", "false").toBoolean
 
@@ -125,6 +89,10 @@ object AkkaBuild {
   lazy val defaultSettings = resolverSettings ++
     TestExtras.Filter.settings ++
     Protobuf.settings ++ Seq[Setting[_]](
+      publishTo := Some(Resolver.url(
+        "Artifactory ThirdParty releases",
+        new URL("http://artifactory.zentrale.local/ext-release-local")
+      )(Resolver.ivyStylePatterns)),
       // compile options
       scalacOptions in Compile ++= DefaultScalacOptions,
       // Makes sure that, even when compiling with a jdk version greater than 8, the resulting jar will not refer to
@@ -248,7 +216,6 @@ object AkkaBuild {
 
       // show full stack traces and test case durations
       testOptions in Test += Tests.Argument("-oDF")) ++
-      mavenLocalResolverSettings ++
       docLintingSettings ++
       CrossJava.crossJavaSettings
 

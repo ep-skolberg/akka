@@ -23,8 +23,8 @@ initialize := {
 }
 
 akka.AkkaBuild.buildSettings
+
 shellPrompt := { s => Project.extract(s).currentProject.id + " > " }
-resolverSettings
 
 def isScala211: Boolean = System.getProperty("akka.build.scalaVersion", "").startsWith("2.11")
 
