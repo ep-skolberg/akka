@@ -89,10 +89,6 @@ object AkkaBuild {
   lazy val defaultSettings = resolverSettings ++
     TestExtras.Filter.settings ++
     Protobuf.settings ++ Seq[Setting[_]](
-      publishTo := Some(Resolver.url(
-        "Artifactory ThirdParty releases",
-        new URL("http://artifactory.zentrale.local/ext-release-local")
-      )(Resolver.ivyStylePatterns)),
       // compile options
       scalacOptions in Compile ++= DefaultScalacOptions,
       // Makes sure that, even when compiling with a jdk version greater than 8, the resulting jar will not refer to
