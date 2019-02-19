@@ -1,19 +1,19 @@
 /**
  * Copyright (C) 2009-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.cluster.typed
 
 import java.nio.charset.StandardCharsets
 
 import akka.actor.ExtendedActorSystem
-import akka.actor.typed.scaladsl.Actor
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter._
-import akka.testkit.typed.{ TestKit, TestKitSettings }
-import akka.testkit.typed.scaladsl.TestProbe
+import akka.testkit.typed.TestKitSettings
+import akka.testkit.typed.scaladsl.{ ActorTestKit, TestProbe }
 import akka.actor.typed.{ ActorRef, ActorRefResolver, Props, TypedAkkaSpecWithShutdown }
 import akka.serialization.SerializerWithStringManifest
 import com.typesafe.config.ConfigFactory
-
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
@@ -48,20 +48,23 @@ object ClusterSingletonApiSpec {
 
   case object Perish extends PingProtocol
 
-  val pingPong = Actor.immutable[PingProtocol] { (_, msg) ⇒
+  val pingPong = Behaviors.receive[PingProtocol] { (_, msg) ⇒
 
     msg match {
       case Ping(respondTo) ⇒
         respondTo ! Pong
-        Actor.same
+        Behaviors.same
 
       case Perish ⇒
-        Actor.stopped
+        Behaviors.stopped
     }
 
   }
 
   class PingSerializer(system: ExtendedActorSystem) extends SerializerWithStringManifest {
+    // Reproducer of issue #24620, by eagerly creating the ActorRefResolver in serializer
+    val actorRefResolver = ActorRefResolver(system.toTyped)
+
     def identifier: Int = 47
     def manifest(o: AnyRef): String = o match {
       case _: Ping ⇒ "a"
@@ -70,21 +73,23 @@ object ClusterSingletonApiSpec {
     }
 
     def toBinary(o: AnyRef): Array[Byte] = o match {
-      case p: Ping ⇒ ActorRefResolver(system.toTyped).toSerializationFormat(p.respondTo).getBytes(StandardCharsets.UTF_8)
+      case p: Ping ⇒ actorRefResolver.toSerializationFormat(p.respondTo).getBytes(StandardCharsets.UTF_8)
       case Pong    ⇒ Array.emptyByteArray
       case Perish  ⇒ Array.emptyByteArray
     }
 
     def fromBinary(bytes: Array[Byte], manifest: String): AnyRef = manifest match {
-      case "a" ⇒ Ping(ActorRefResolver(system.toTyped).resolveActorRef(new String(bytes, StandardCharsets.UTF_8)))
+      case "a" ⇒ Ping(actorRefResolver.resolveActorRef(new String(bytes, StandardCharsets.UTF_8)))
       case "b" ⇒ Pong
       case "c" ⇒ Perish
     }
   }
 }
 
-class ClusterSingletonApiSpec extends TestKit("ClusterSingletonApiSpec", ClusterSingletonApiSpec.config) with TypedAkkaSpecWithShutdown {
+class ClusterSingletonApiSpec extends ActorTestKit with TypedAkkaSpecWithShutdown {
   import ClusterSingletonApiSpec._
+
+  override def config = ClusterSingletonApiSpec.config
 
   implicit val testSettings = TestKitSettings(system)
   val clusterNode1 = Cluster(system)
@@ -111,8 +116,8 @@ class ClusterSingletonApiSpec extends TestKit("ClusterSingletonApiSpec", Cluster
       clusterNode1.manager ! Join(clusterNode1.selfMember.address)
       clusterNode2.manager ! Join(clusterNode1.selfMember.address)
 
-      node1UpProbe.expectMsgType[SelfUp]
-      node2UpProbe.expectMsgType[SelfUp]
+      node1UpProbe.expectMessageType[SelfUp]
+      node2UpProbe.expectMessageType[SelfUp]
 
       val cs1: ClusterSingleton = ClusterSingleton(system)
       val cs2 = ClusterSingleton(adaptedSystem2)
@@ -130,12 +135,12 @@ class ClusterSingletonApiSpec extends TestKit("ClusterSingletonApiSpec", Cluster
 
       node1PongProbe.awaitAssert({
         node1ref ! Ping(node1PongProbe.ref)
-        node1PongProbe.expectMsg(Pong)
+        node1PongProbe.expectMessage(Pong)
       }, 3.seconds)
 
       node2PongProbe.awaitAssert({
         node2ref ! Ping(node2PongProbe.ref)
-        node2PongProbe.expectMsg(Pong)
+        node2PongProbe.expectMessage(Pong)
       }, 3.seconds)
 
     }

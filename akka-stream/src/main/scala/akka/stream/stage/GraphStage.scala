@@ -1,13 +1,13 @@
 /**
  * Copyright (C) 2015-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.stream.stage
 
 import java.util.concurrent.atomic.AtomicReference
 
 import akka.actor._
 import akka.annotation.{ ApiMayChange, InternalApi }
-import akka.dispatch.ExecutionContexts
 import akka.japi.function.{ Effect, Procedure }
 import akka.stream._
 import akka.stream.actor.ActorSubscriberMessage
@@ -103,7 +103,7 @@ private object TimerMessages {
 
 object GraphStageLogic {
   final case class StageActorRefNotInitializedException()
-    extends RuntimeException("You must first call getStageActor, to initialize the Actors behaviour")
+    extends RuntimeException("You must first call getStageActor, to initialize the Actors behavior")
 
   /**
    * Input handler that terminates the stage upon receiving completion.
@@ -177,11 +177,23 @@ object GraphStageLogic {
 
   /**
    * Minimal actor to work with other actors and watch them in a synchronous ways
+   *
+   * @param name leave empty to use plain auto generated names
    */
   final class StageActor(
     materializer:     ActorMaterializer,
     getAsyncCallback: StageActorRef.Receive ⇒ AsyncCallback[(ActorRef, Any)],
-    initialReceive:   StageActorRef.Receive) {
+    initialReceive:   StageActorRef.Receive,
+    name:             String) {
+
+    // not really needed, but let's keep MiMa happy
+    def this(
+      materializer:     akka.stream.ActorMaterializer,
+      getAsyncCallback: StageActorRef.Receive ⇒ AsyncCallback[(ActorRef, Any)],
+      initialReceive:   StageActorRef.Receive
+    ) {
+      this(materializer, getAsyncCallback, initialReceive, "")
+    }
 
     private val callback = getAsyncCallback(internalReceive)
     private def cell = materializer.supervisor match {
@@ -191,14 +203,13 @@ object GraphStageLogic {
         throw new IllegalStateException(s"Stream supervisor must be a local actor, was [${unknown.getClass.getName}]")
     }
 
-    private val functionRef: FunctionRef = {
-      cell.addFunctionRef {
+    private val functionRef: FunctionRef =
+      cell.addFunctionRef({
         case (_, m @ (PoisonPill | Kill)) ⇒
           materializer.logger.warning("{} message sent to StageActor({}) will be ignored, since it is not a real Actor." +
             "Use a custom message type to communicate with it instead.", m, functionRef.path)
         case pair ⇒ callback.invoke(pair)
-      }
-    }
+      }, name)
 
     /**
      * The ActorRef by which this StageActor can be contacted from the outside.
@@ -208,7 +219,7 @@ object GraphStageLogic {
     def ref: ActorRef = functionRef
 
     @volatile
-    private[this] var behaviour = initialReceive
+    private[this] var behavior = initialReceive
 
     /** INTERNAL API */
     private[akka] def internalReceive(pack: (ActorRef, Any)): Unit = {
@@ -216,18 +227,18 @@ object GraphStageLogic {
         case Terminated(ref) ⇒
           if (functionRef.isWatching(ref)) {
             functionRef.unwatch(ref)
-            behaviour(pack)
+            behavior(pack)
           }
-        case _ ⇒ behaviour(pack)
+        case _ ⇒ behavior(pack)
       }
     }
 
     /**
-     * Special `become` allowing to swap the behaviour of this StageActorRef.
+     * Special `become` allowing to swap the behavior of this StageActorRef.
      * Unbecome is not available.
      */
     def become(receive: StageActorRef.Receive): Unit = {
-      behaviour = receive
+      behavior = receive
     }
 
     def stop(): Unit = cell.removeFunctionRef(functionRef)
@@ -1162,17 +1173,28 @@ abstract class GraphStageLogic private[stream] (val inCount: Int, val outCount: 
    */
   // FIXME: I don't like the Pair allocation :(
   @ApiMayChange
-  final protected def getStageActor(receive: ((ActorRef, Any)) ⇒ Unit): StageActor = {
+  final protected def getStageActor(receive: ((ActorRef, Any)) ⇒ Unit): StageActor =
     _stageActor match {
       case null ⇒
         val actorMaterializer = ActorMaterializerHelper.downcast(interpreter.materializer)
-        _stageActor = new StageActor(actorMaterializer, getAsyncCallback, receive)
+        _stageActor = new StageActor(actorMaterializer, getAsyncCallback, receive, stageActorName)
         _stageActor
       case existing ⇒
         existing.become(receive)
         existing
     }
-  }
+
+  /**
+   * Override and return a name to be given to the StageActor of this stage.
+   *
+   * This method will be only invoked and used once, during the first [[getStageActor]]
+   * invocation whichc reates the actor, since subsequent `getStageActors` calls function
+   * like `become`, rather than creating new actors.
+   *
+   * Returns an empty string by default, which means that the name will a unique generated String (e.g. "$$a").
+   */
+  @ApiMayChange
+  protected def stageActorName: String = ""
 
   // Internal hooks to avoid reliance on user calling super in preStart
   /** INTERNAL API */
@@ -1490,6 +1512,20 @@ abstract class TimerGraphStageLogic(_shape: Shape) extends GraphStageLogic(_shap
   }
 
   /**
+   * Schedule timer to call [[#onTimer]] periodically with the given interval after the specified
+   * initial delay.
+   * Any existing timer with the same key will automatically be canceled before
+   * adding the new timer.
+   */
+  final protected def schedulePeriodicallyWithInitialDelay(
+    timerKey:     Any,
+    initialDelay: java.time.Duration,
+    interval:     java.time.Duration): Unit = {
+    import akka.util.JavaDurationConverters._
+    schedulePeriodicallyWithInitialDelay(timerKey, initialDelay.asScala, interval.asScala)
+  }
+
+  /**
    * Schedule timer to call [[#onTimer]] after given delay.
    * Any existing timer with the same key will automatically be canceled before
    * adding the new timer.
@@ -1501,6 +1537,16 @@ abstract class TimerGraphStageLogic(_shape: Shape) extends GraphStageLogic(_shap
       def run() = getTimerAsyncCallback.invoke(Scheduled(timerKey, id, repeating = false))
     })
     keyToTimers(timerKey) = Timer(id, task)
+  }
+
+  /**
+   * Schedule timer to call [[#onTimer]] after given delay.
+   * Any existing timer with the same key will automatically be canceled before
+   * adding the new timer.
+   */
+  final protected def scheduleOnce(timerKey: Any, delay: java.time.Duration): Unit = {
+    import akka.util.JavaDurationConverters._
+    scheduleOnce(timerKey, delay.asScala)
   }
 
   /**
@@ -1529,6 +1575,15 @@ abstract class TimerGraphStageLogic(_shape: Shape) extends GraphStageLogic(_shap
   final protected def schedulePeriodically(timerKey: Any, interval: FiniteDuration): Unit =
     schedulePeriodicallyWithInitialDelay(timerKey, interval, interval)
 
+  /**
+   * Schedule timer to call [[#onTimer]] periodically with the given interval.
+   * Any existing timer with the same key will automatically be canceled before
+   * adding the new timer.
+   */
+  final protected def schedulePeriodically(timerKey: Any, interval: java.time.Duration): Unit = {
+    import akka.util.JavaDurationConverters._
+    schedulePeriodically(timerKey, interval.asScala)
+  }
 }
 
 /** Java API: [[GraphStageLogic]] with [[StageLogging]]. */

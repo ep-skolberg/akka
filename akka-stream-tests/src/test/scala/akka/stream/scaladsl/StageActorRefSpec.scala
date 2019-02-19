@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2009-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.stream.scaladsl
 
 import akka.actor.{ Kill, PoisonPill, NoSerializationVerificationNeeded, ActorRef }
@@ -191,14 +192,14 @@ object StageActorRefSpec {
 
         override def preStart(): Unit = {
           pull(in)
-          probe ! getStageActor(behaviour).ref
+          probe ! getStageActor(behavior).ref
         }
 
-        def behaviour(m: (ActorRef, Any)): Unit = {
+        def behavior(m: (ActorRef, Any)): Unit = {
           m match {
             case (sender, Add(n))                ⇒ sum += n
             case (sender, PullNow)               ⇒ pull(in)
-            case (sender, CallInitStageActorRef) ⇒ sender ! getStageActor(behaviour).ref
+            case (sender, CallInitStageActorRef) ⇒ sender ! getStageActor(behavior).ref
             case (sender, BecomeStringEcho) ⇒
               getStageActor {
                 case (theSender, msg) ⇒ theSender ! msg.toString

@@ -2,34 +2,15 @@
 
 For introduction to the Akka Cluster concepts please see @ref:[Cluster Specification](common/cluster.md).
 
-## Preparing Your Project for Clustering
+## Dependency
 
-The Akka cluster is a separate jar file. Make sure that you have the following dependency in your project:
+To use Akka Cluster, add the module to your project:
 
-sbt
-:   @@@vars
-    ```
-    "com.typesafe.akka" %% "akka-cluster" % "$akka.version$"
-    ```
-    @@@
-   
-Gradle
-:   @@@vars
-    ```
-     compile group: 'com.typesafe.akka', name: 'akka-cluster_$scala.binary_version$', version: '$akka.version$'
-    ```
-    @@@
-
-Maven
-:   @@@vars
-    ```
-    <dependency>
-      <groupId>com.typesafe.akka</groupId>
-      <artifactId>akka-cluster_$scala.binary_version$</artifactId>
-      <version>$akka.version$</version>
-    </dependency>
-    ```
-    @@@
+@@dependency[sbt,Maven,Gradle] {
+  group="com.typesafe.akka"
+  artifact="akka-cluster_$scala.binary_version$"
+  version="$akka.version$"
+}
 
 ## A Simple Cluster Example
 
@@ -99,13 +80,19 @@ The actor registers itself as subscriber of certain cluster events. It receives 
 of the cluster when the subscription starts and then it receives events for changes that happen in the cluster.
 
 The easiest way to run this example yourself is to download the ready to run
-@scala[@extref[Akka Cluster Sample with Scala](ecs:akka-samples-cluster-scala)] 
+@scala[@extref[Akka Cluster Sample with Scala](ecs:akka-samples-cluster-scala)]
 @java[@extref[Akka Cluster Sample with Java](ecs:akka-samples-cluster-java)]
 together with the tutorial. It contains instructions on how to run the `SimpleClusterApp`.
-The source code of this sample can be found in the 
+The source code of this sample can be found in the
 @scala[@extref[Akka Samples Repository](samples:akka-sample-cluster-scala)]@java[@extref[Akka Samples Repository](samples:akka-sample-cluster-java)].
 
 ## Joining to Seed Nodes
+
+@@@ note
+  When starting clusters on cloud systems such as Kubernetes, AWS, Google Cloud, Azure, Mesos or others which maintain 
+  DNS or other ways of discovering nodes, you may want to use the automatic joining process implemented by the open source
+  [Akka Cluster Bootstrap](https://developer.lightbend.com/docs/akka-management/current/bootstrap.html) module.
+@@@
 
 You may decide if joining to the cluster should be done manually or automatically
 to configured initial contact points, so-called seed nodes. After the joining process
@@ -131,13 +118,14 @@ This can also be defined as Java system properties when starting the JVM using t
 -Dakka.cluster.seed-nodes.1=akka.tcp://ClusterSystem@host2:2552
 ```
 
-Such configuration is typically created dynamically by external tools, see for example:
-
-* [Deploying clustered Akka applications on Kubernetes](http://developer.lightbend.com/guides/k8-akka-cluster/)
-* [ConstructR](https://github.com/hseeberger/constructr)
+Instead of manually configuring seed nodes, which is useful in development or statically assigned node IPs, you may want 
+to automate the discovery of seed nodes using your cloud providers or cluster orchestrator, or some other form of service 
+discovery (such as managed DNS). The open source Akka Management library includes the 
+[Cluster Bootstrap](https://developer.lightbend.com/docs/akka-management/current/bootstrap.html) module which handles 
+just that. Please refer to its documentation for more details. 
 
 The seed nodes can be started in any order and it is not necessary to have all
-seed nodes running, but the node configured as the first element in the `seed-nodes`
+seed nodes running, but the node configured as the **first element** in the `seed-nodes`
 configuration list must be started when initially starting a cluster, otherwise the
 other seed-nodes will not become initialized and no other node can join the cluster.
 The reason for the special first seed node is to avoid forming separated islands when
@@ -152,7 +140,7 @@ seed nodes in the existing cluster. Note that if you stop all seed nodes at the 
 and restart them with the same `seed-nodes` configuration they will join themselves and
 form a new cluster instead of joining remaining nodes of the existing cluster. That is
 likely not desired and should be avoided by listing several nodes as seed nodes for redundancy
-and don't stop all of them at the same time. 
+and don't stop all of them at the same time.
 
 You may also use @scala[`Cluster(system).joinSeedNodes`]@java[`Cluster.get(system).joinSeedNodes`] to join programmatically,
 which is attractive when dynamically discovering other nodes at startup by using some external tool or API.
@@ -195,8 +183,7 @@ be allowed to join.
 
 @@@ note
 
-The name of the `ActorSystem` must be the same for all members of a cluster. The name is given
-when you start the `ActorSystem`.
+The name of the `ActorSystem` must be the same for all members of a cluster. The name is given when you start the `ActorSystem`.
 
 @@@
 
@@ -230,20 +217,40 @@ akka.cluster.auto-down-unreachable-after = 120s
 This means that the cluster leader member will change the `unreachable` node
 status to `down` automatically after the configured time of unreachability.
 
-This is a naïve approach to remove unreachable nodes from the cluster membership. It
-works great for crashes and short transient network partitions, but not for long network
-partitions. Both sides of the network partition will see the other side as unreachable
-and after a while remove it from its cluster membership. Since this happens on both
-sides the result is that two separate disconnected clusters have been created. This
-can also happen because of long GC pauses or system overload.
+This is a naïve approach to remove unreachable nodes from the cluster membership.
+It can be useful during development but in a production environment it will eventually breakdown the cluster. When a network partition occurs, both sides of the
+partition will see the other side as unreachable and remove it from the cluster.
+This results in the formation of two separate, disconnected, clusters 
+(known as *Split Brain*).
+
+This behaviour is not limited to network partitions. It can also occur if a node
+in the cluster is overloaded, or experiences a long GC pause.
 
 @@@ warning
 
-We recommend against using the auto-down feature of Akka Cluster in production.
-This is crucial for correct behavior if you use @ref:[Cluster Singleton](cluster-singleton.md) or
-@ref:[Cluster Sharding](cluster-sharding.md), especially together with Akka @ref:[Persistence](persistence.md).
-For Akka Persistence with Cluster Sharding it can result in corrupt data in case
-of network partitions.
+We recommend against using the auto-down feature of Akka Cluster in production. It
+has multiple undesirable consequences for production systems.
+
+If you are using @ref:[Cluster Singleton](cluster-singleton.md) or
+@ref:[Cluster Sharding](cluster-sharding.md) it can break the contract provided by 
+those features. Both provide a guarantee that an actor will be unique in a cluster.
+With the auto-down feature enabled, it is possible for multiple independent clusters
+to form (*Split Brain*). When this happens the guaranteed uniqueness will no
+longer be true resulting in undesirable behaviour in the system.
+
+This is even more severe when @ref:[Akka Persistence](persistence.md) is used in
+conjunction with Cluster Sharding. In this case, the lack of unique actors can 
+cause multiple actors to write to the same journal. Akka Persistence operates on a
+single writer principle. Having multiple writers will corrupt the journal
+and make it unusable.
+
+Finally, even if you don't use features such as Persistence, Sharding, or Singletons, 
+auto-downing can lead the system to form multiple small clusters. These small
+clusters will be independent from each other. They will be unable to communicate
+and as a result you may experience performance degredation. Once this condition
+occurs, it will require manual intervention in order to reform the cluster.
+
+Because of these issues, auto-downing should **never** be used in a production environment.
 
 @@@
 
@@ -402,7 +409,7 @@ The easiest way to run **Worker Dial-in Example** example yourself is to downloa
 @scala[@extref[Akka Cluster Sample with Scala](ecs:akka-samples-cluster-scala)]
 @java[@extref[Akka Cluster Sample with Java](ecs:akka-samples-cluster-java)]
 together with the tutorial. It contains instructions on how to run the **Worker Dial-in Example** sample.
-The source code of this sample can be found in the 
+The source code of this sample can be found in the
 @scala[@extref[Akka Samples Repository](samples:akka-sample-cluster-scala)]@java[@extref[Akka Samples Repository](samples:akka-sample-cluster-java)].
 
 ## Node Roles
@@ -723,7 +730,7 @@ The easiest way to run **Router Example with Group of Routees** example yourself
 @scala[@extref[Akka Cluster Sample with Scala](ecs:akka-samples-cluster-scala)]
 @java[@extref[Akka Cluster Sample with Java](ecs:akka-samples-cluster-java)]
 together with the tutorial. It contains instructions on how to run the **Router Example with Group of Routees** sample.
-The source code of this sample can be found in the 
+The source code of this sample can be found in the
 @scala[@extref[Akka Samples Repository](samples:akka-sample-cluster-scala)]@java[@extref[Akka Samples Repository](samples:akka-sample-cluster-java)].
 
 ### Router with Pool of Remote Deployed Routees
@@ -770,7 +777,7 @@ and deploys workers. To keep track of a single master we use the @ref:[Cluster S
 in the cluster-tools module. The `ClusterSingletonManager` is started on each node:
 
 Scala
-:   @@@vars 
+:   @@@vars
     ```
     system.actorOf(
       ClusterSingletonManager.props(
@@ -797,7 +804,7 @@ Scala
       name = "statsServiceProxy")
     ```
     @@@
-    
+
 Java
 :  @@snip [StatsSampleOneMasterMain.java]($code$/java/jdocs/cluster/StatsSampleOneMasterMain.java) { #singleton-proxy }
 
@@ -824,7 +831,7 @@ The easiest way to run **Router Example with Pool of Remote Deployed Routees** e
 @scala[@extref[Akka Cluster Sample with Scala](ecs:akka-samples-cluster-scala)]
 @java[@extref[Akka Cluster Sample with Java](ecs:akka-samples-cluster-java)]
 together with the tutorial. It contains instructions on how to run the **Router Example with Pool of Remote Deployed Routees** sample.
-The source code of this sample can be found in the 
+The source code of this sample can be found in the
 @scala[@extref[Akka Samples Repository](samples:akka-sample-cluster-scala)]@java[@extref[Akka Samples Repository](samples:akka-sample-cluster-java)].
 
 ## Cluster Metrics
@@ -886,16 +893,16 @@ the actor system for a specific role. This can also be used to grab the `akka.ac
 
 @@snip [StatsSampleSpec.scala]($akka$/akka-cluster-metrics/src/multi-jvm/scala/akka/cluster/metrics/sample/StatsSampleSpec.scala) { #addresses }
 
-@@@ 
+@@@
 
 @@@ div { .group-java }
 
 ## How to Test
 
-Currently testing with the `sbt-multi-jvm` plugin is only documented for Scala. 
+Currently testing with the `sbt-multi-jvm` plugin is only documented for Scala.
 Go to the corresponding Scala version of this page for details.
 
-@@@ 
+@@@
 
 ## Management
 
@@ -1013,3 +1020,27 @@ Related config properties: `akka.cluster.use-dispatcher = akka.cluster.cluster-d
 Corresponding default values: `akka.cluster.use-dispatcher =`.
 
 @@@
+
+### Configuration Compatibility Check
+
+Creating a cluster is about deploying two or more nodes and make then behave as if they were one single application. Therefore it's extremely important that all nodes in a cluster are configured with compatible settings. 
+
+The Configuration Compatibility Check feature ensures that all nodes in a cluster have a compatible configuration. Whenever a new node is joining an existing cluster, a subset of its configuration settings (only those that are required to be checked) is sent to the nodes in the cluster for verification. Once the configuration is checked on the cluster side, the cluster sends back its own set of required configuration settings. The joining node will then verify if it's compliant with the cluster configuration. The joining node will only proceed if all checks pass, on both sides.   
+
+New custom checkers can be added by extending `akka.cluster.JoinConfigCompatChecker` and including them in the configuration. Each checker must be associated with a unique key:
+
+```
+akka.cluster.configuration-compatibility-check.checkers {
+  my-custom-config = "com.company.MyCustomJoinConfigCompatChecker"
+}
+``` 
+
+@@@ note
+
+Configuration Compatibility Check is enabled by default, but can be disabled by setting `akka.cluster.configuration-compatibility-check.enforce-on-join = off`. This is specially useful when performing rolling updates. Obviously this should only be done if a complete cluster shutdown isn't an option. A cluster with nodes with different configuration settings may lead to data loss or data corruption. 
+
+This setting should only be disabled on the joining nodes. The checks are always performed on both sides, and warnings are logged. In case of incompatibilities, it is the responsibility of the joining node to decide if the process should be interrupted or not.  
+
+If you are performing a rolling update on cluster using Akka 2.5.9 or prior (thus, not supporting this feature), the checks will not be performed because the running cluster has no means to verify the configuration sent by the joining node, nor to send back its own configuration.  
+
+@@@ 

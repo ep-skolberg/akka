@@ -1,13 +1,13 @@
 /**
  * Copyright (C) 2017-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.actor.typed.javadsl
 
 import akka.actor.typed.Behavior
 import akka.actor.typed.Props
 import akka.actor.typed.EmptyProps
 import akka.actor.typed.ActorRef
-import akka.actor.typed.internal.adapter.ActorRefAdapter
 import akka.actor.typed.scaladsl.adapter._
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.internal.adapter.ActorContextAdapter
@@ -74,7 +74,7 @@ object Adapter {
   def unwatch[U](ctx: ActorContext[_], other: akka.actor.ActorRef): Unit =
     ctx.unwatch(other)
 
-  def stop(ctx: ActorContext[_], child: akka.actor.ActorRef): Boolean =
+  def stop(ctx: ActorContext[_], child: akka.actor.ActorRef): Unit =
     ctx.stop(child)
 
   def actorOf(ctx: ActorContext[_], props: akka.actor.Props): akka.actor.ActorRef =

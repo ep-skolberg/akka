@@ -1,6 +1,7 @@
 /**
  * Copyright (C) 2009-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.cluster.typed
 
 import akka.actor.NoSerializationVerificationNeeded
@@ -8,8 +9,8 @@ import akka.annotation.{ DoNotInherit, InternalApi }
 import akka.cluster.ClusterSettings.DataCenter
 import akka.cluster.singleton.{ ClusterSingletonProxySettings, ClusterSingletonManagerSettings ⇒ UntypedClusterSingletonManagerSettings }
 import akka.cluster.typed.internal.AdaptedClusterSingletonImpl
-import akka.actor.typed.internal.adapter.ActorSystemAdapter
 import akka.actor.typed.{ ActorRef, ActorSystem, Behavior, Extension, ExtensionId, Props }
+import akka.util.JavaDurationConverters._
 import com.typesafe.config.Config
 import scala.concurrent.duration._
 
@@ -19,6 +20,11 @@ object ClusterSingletonSettings {
   def apply(
     system: ActorSystem[_]
   ): ClusterSingletonSettings = fromConfig(system.settings.config.getConfig("akka.cluster"))
+
+  /**
+   * Java API
+   */
+  def create(system: ActorSystem[_]): ClusterSingletonSettings = apply(system)
 
   def fromConfig(
     config: Config
@@ -55,8 +61,10 @@ final class ClusterSingletonSettings(
   def withNoDataCenter(): ClusterSingletonSettings = copy(dataCenter = None)
 
   def withRemovalMargin(removalMargin: FiniteDuration): ClusterSingletonSettings = copy(removalMargin = removalMargin)
+  def withRemovalMargin(removalMargin: java.time.Duration): ClusterSingletonSettings = withRemovalMargin(removalMargin.asScala)
 
   def withHandoverRetryInterval(handOverRetryInterval: FiniteDuration): ClusterSingletonSettings = copy(handOverRetryInterval = handOverRetryInterval)
+  def withHandoverRetryInterval(handOverRetryInterval: java.time.Duration): ClusterSingletonSettings = withHandoverRetryInterval(handOverRetryInterval.asScala)
 
   def withBufferSize(bufferSize: Int): ClusterSingletonSettings = copy(bufferSize = bufferSize)
 
@@ -108,14 +116,14 @@ object ClusterSingleton extends ExtensionId[ClusterSingleton] {
  */
 @InternalApi
 private[akka] object ClusterSingletonImpl {
-  def managerNameFor(singletonName: String) = s"singletonManager${singletonName}"
+  def managerNameFor(singletonName: String) = s"singletonManager$singletonName"
 }
 
 /**
  * Not intended for user extension.
  */
 @DoNotInherit
-trait ClusterSingleton extends Extension {
+abstract class ClusterSingleton extends Extension {
 
   /**
    * Start if needed and provide a proxy to a named singleton
@@ -208,13 +216,17 @@ final class ClusterSingletonManagerSettings(
 
   def withRole(role: String): ClusterSingletonManagerSettings = copy(role = UntypedClusterSingletonManagerSettings.roleOption(role))
 
-  def withRole(role: Option[String]) = copy(role = role)
+  def withRole(role: Option[String]): ClusterSingletonManagerSettings = copy(role = role)
 
   def withRemovalMargin(removalMargin: FiniteDuration): ClusterSingletonManagerSettings =
     copy(removalMargin = removalMargin)
+  def withRemovalMargin(removalMargin: java.time.Duration): ClusterSingletonManagerSettings =
+    withRemovalMargin(removalMargin.asScala)
 
   def withHandOverRetryInterval(retryInterval: FiniteDuration): ClusterSingletonManagerSettings =
     copy(handOverRetryInterval = retryInterval)
+  def withHandOverRetryInterval(retryInterval: java.time.Duration): ClusterSingletonManagerSettings =
+    withHandOverRetryInterval(retryInterval.asScala)
 
   private def copy(
     singletonName:         String         = singletonName,

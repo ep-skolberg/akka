@@ -1,14 +1,12 @@
 /*
- * Copyright (C) 2017-2018 Lightbend Inc. <http://www.lightbend.com/>
+ * Copyright (C) 2017-2018 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.cluster.typed
 
 import akka.actor.typed.{ ActorRef, Behavior, Props, TypedAkkaSpecWithShutdown }
-import akka.persistence.typed.scaladsl.PersistentActor
-import akka.persistence.typed.scaladsl.PersistentActor.{ CommandHandler, Effect }
-import akka.testkit.typed.TestKit
-import akka.testkit.typed.scaladsl.TestProbe
+import akka.persistence.typed.scaladsl.{ Effect, PersistentBehaviors }
+import akka.testkit.typed.scaladsl.{ ActorTestKit, TestProbe }
 import com.typesafe.config.ConfigFactory
 
 object ClusterSingletonPersistenceSpec {
@@ -37,23 +35,25 @@ object ClusterSingletonPersistenceSpec {
   private final case object StopPlz extends Command
 
   val persistentActor: Behavior[Command] =
-    PersistentActor.immutable[Command, String, String](
+    PersistentBehaviors.receive[Command, String, String](
       persistenceId = "TheSingleton",
       initialState = "",
-      commandHandler = CommandHandler((_, state, cmd) ⇒ cmd match {
+      commandHandler = (_, state, cmd) ⇒ cmd match {
         case Add(s) ⇒ Effect.persist(s)
         case Get(replyTo) ⇒
           replyTo ! state
           Effect.none
         case StopPlz ⇒ Effect.stop
-      }),
+      },
       eventHandler = (state, evt) ⇒ if (state.isEmpty) evt else state + "|" + evt)
 
 }
 
-class ClusterSingletonPersistenceSpec extends TestKit(ClusterSingletonPersistenceSpec.config) with TypedAkkaSpecWithShutdown {
+class ClusterSingletonPersistenceSpec extends ActorTestKit with TypedAkkaSpecWithShutdown {
   import ClusterSingletonPersistenceSpec._
   import akka.actor.typed.scaladsl.adapter._
+
+  override def config = ClusterSingletonPersistenceSpec.config
 
   implicit val s = system
 
@@ -78,7 +78,7 @@ class ClusterSingletonPersistenceSpec extends TestKit(ClusterSingletonPersistenc
       ref ! Add("b")
       ref ! Add("c")
       ref ! Get(p.ref)
-      p.expectMsg("a|b|c")
+      p.expectMessage("a|b|c")
     }
   }
 }

@@ -201,13 +201,13 @@ Defers creation and materialization of a `Source` until there is demand.
 
 ---------------------------------------------------------------
 
-### actorPublisher
+### lazilyAsync
 
-Wrap an actor extending `ActorPublisher` as a source.
+Defers creation and materialization of a `CompletionStage` until there is demand.
 
-**emits** depends on the actor implementation
+**emits** the future completes
 
-**completes** when the actor stops
+**completes** after the future has completed
 
 ---------------------------------------------------------------
 
@@ -426,10 +426,15 @@ Invoke a callback when the stream has completed or failed.
 
 ---------------------------------------------------------------
 
-### lazyInit
+### lazyInitAsync
 
-Invoke sinkFactory function to create a real sink upon receiving the first element. Internal `Sink` will not be created if there are no elements,
-because of completion or error. *fallback* will be invoked if there was no elements and completed is received from upstream.
+Creates a real `Sink` upon receiving the first element. Internal `Sink` will not be created if there are no elements,
+because of completion or error.
+
+- If upstream completes before an element was received then the @scala[`Future`]@java[`CompletionStage`] is completed with @scala[`None`]@java[an empty `Optional`].
+- If upstream fails before an element was received, `sinkFactory` throws an exception, or materialization of the internal
+  sink fails then the @scala[`Future`]@java[`CompletionStage`] is completed with the exception.
+- Otherwise the @scala[`Future`]@java[`CompletionStage`] is completed with the materialized value of the internal sink.
 
 **cancels** never
 
@@ -508,19 +513,6 @@ to provide back pressure onto the sink.
 
 ---------------------------------------------------------------
 
-### actorSubscriber
-
-Create an actor from a `Props` upon materialization, where the actor implements `ActorSubscriber`, which will
-receive the elements from the stream.
-
-Materializes into an `ActorRef` to the created actor.
-
-**cancels** when the actor terminates
-
-**backpressures** depends on the actor implementation
-
----------------------------------------------------------------
-
 ### asPublisher
 
 Integration with Reactive Streams, materializes into a `org.reactivestreams.Publisher`.
@@ -530,6 +522,14 @@ Integration with Reactive Streams, materializes into a `org.reactivestreams.Publ
 ### fromSubscriber
 
 Integration with Reactive Streams, wraps a `org.reactivestreams.Subscriber` as a sink
+
+---------------------------------------------------------------
+
+### preMaterialize
+
+Materializes this Sink, immediately returning (1) its materialized value, and (2) a new Sink that can be consume elements 'into' the pre-materialized one.
+
+Useful for when you need a materialized value of a Sink when handing it out to someone to materialize it for you.
 
 ---------------------------------------------------------------
 
@@ -716,6 +716,8 @@ Attaches the given `Sink` to this `Flow`, meaning that elements that pass throug
 
 **completes** when upstream completes
 
+**cancels** when downstream or `Sink` cancels
+
 ---------------------------------------------------------------
 
 ### map
@@ -791,6 +793,23 @@ value is passed downstream. Can often replace `filter` followed by `map` to achi
 **backpressures** the partial function is defined for the element and downstream backpressures
 
 **completes** when upstream completes
+
+---------------------------------------------------------------
+
+### collectType 
+
+Transform this stream by testing the type of each of the elements on which the element is an instance of 
+the provided type as they pass through this processing step. Non-matching elements are filtered out.
+
+Adheres to the [[ActorAttributes.SupervisionStrategy]] attribute.
+
+'''Emits when''' the element is an instance of the provided type
+
+'''Backpressures when''' the element is an instance of the provided type and downstream backpressures
+
+'''Completes when''' upstream completes
+
+'''Cancels when''' downstream cancels
 
 ---------------------------------------------------------------
 
@@ -1075,6 +1094,93 @@ This can be changed by calling @scala[`Attributes.logLevels(...)`] @java[`Attrib
 
 ---------------------------------------------------------------
 
+### divertTo
+
+Each upstream element will either be diverted to the given sink, or the downstream consumer according to the predicate function applied to the element.
+
+**emits** when the chosen output stops backpressuring and there is an input element available
+
+**backpressures** when the chosen output backpressures
+
+**completes** when upstream completes and no output is pending
+
+**cancels** when any of the downstreams cancel
+
+---------------------------------------------------------------
+
+### wireTap
+
+Attaches the given `Sink` to this `Flow` as a wire tap, meaning that elements that pass
+through will also be sent to the wire-tap `Sink`, without the latter affecting the mainline flow.
+If the wire-tap `Sink` backpressures, elements that would've been sent to it will be dropped instead.
+
+**emits** element is available and demand exists from the downstream; the element will
+also be sent to the wire-tap `Sink` if there is demand.
+
+**backpressures** downstream backpressures
+
+**completes** upstream completes
+
+**cancels** downstream cancels
+
+---------------------------------------------------------------
+
+### lazyInitAsync
+
+Creates a real `Flow` upon receiving the first element by calling relevant `flowFactory` given as an argument.
+Internal `Flow` will not be created if there are no elements, because of completion or error.
+The materialized value of the `Flow` will be the materialized value of the created internal flow.
+
+The materialized value of the `Flow` is a @scala[`Future[Option[M]]`]@java[`CompletionStage<Optional<M>>`] that is 
+completed with @scala[`Some(mat)`]@java[`Optional.of(mat)`] when the internal flow gets materialized or with @scala[`None`]
+@java[an empty optional] when there where no elements. If the flow materialization (including the call of the `flowFactory`) 
+fails then the future is completed with a failure.
+
+Adheres to the `ActorAttributes.SupervisionStrategy` attribute.
+
+**emits** when the internal flow is successfully created and it emits
+
+**backpressures** when the internal flow is successfully created and it backpressures
+
+**completes** when upstream completes and all elements have been emitted from the internal flow
+
+**completes** when upstream completes and all futures have been completed and all elements have been emitted
+
+---------------------------------------------------------------
+
+### watch
+
+Watch a specific `ActorRef` and signal a failure downstream once the actor terminates.
+The signaled failure will be an @java[@javadoc:[WatchedActorTerminatedException](akka.stream.WatchedActorTerminatedException)]
+@scala[@scaladoc[WatchedActorTerminatedException](akka.stream.WatchedActorTerminatedException)].
+
+**emits** when upstream emits
+
+**backpressures** when downstream backpressures
+
+**completes** when upstream completes
+
+---------------------------------------------------------------
+
+### ask
+
+Specialized stage implementing the @scala[@extref[ask](github:akka-actor/src/main/scala/akka/pattern/AskSupport.scala)]@java[@extref[ask](github:akka-actor/src/main/scala/akka/pattern/Patterns.scala)] pattern for inter-op with untyped actors.
+
+The stream will be failed using an an @java[@javadoc:[WatchedActorTerminatedException](akka.stream.WatchedActorTerminatedException)]
+@scala[@scaladoc[WatchedActorTerminatedException](akka.stream.WatchedActorTerminatedException)] if the target actor terminates,
+or with an @java[@javadoc:[WatchedActorTerminatedException](akka.pattern.AskTimeoutException)] @scala[@scaladoc[WatchedActorTerminatedException](akka.pattern.AskTimeoutException)] if any of the asks times out.
+
+**emits** when the futures (in submission order) created by the ask pattern internally are completed 
+
+**backpressures** when the number of futures reaches the configured parallelism and the downstream backpressures
+
+**fails** when the passed in actor terminates, or a timeout is exceeded in any of the asks performed
+
+**completes** when upstream completes and all futures have been completed and all elements have been emitted
+
+
+---------------------------------------------------------------
+
 <br/>
 
 ## Flow stages composed of Sinks and Sources
@@ -1094,7 +1200,7 @@ for example most useful in handling websocket connections.
 
 ### Flow.fromSinkAndSourceCoupled
 
-Allows coupling termination (cancellation, completion, erroring) of Sinks and Sources while creating a Flow them them.
+Allows coupling termination (cancellation, completion, erroring) of Sinks and Sources while creating a Flow between them.
 Similar to `Flow.fromSinkAndSource` however couples the termination of these two stages.
 
 E.g. if the emitted `Flow` gets a cancellation, the `Source` of course is cancelled,
@@ -1150,6 +1256,28 @@ If a @scala[`Future`] @java[`CompletionStage`] fails, the stream also fails (unl
 **backpressures** when the number of @scala[`Future` s] @java[`CompletionStage` s] reaches the configured parallelism and the downstream backpressures
 
 **completes** upstream completes and all @scala[`Future` s] @java[`CompletionStage` s] has been completed  and all elements has been emitted
+
+---------------------------------------------------------------
+
+### ask
+
+Use the `ask` pattern to send a request-reply message to the target `ref` actor.
+If any of the asks times out it will fail the stream with a [[akka.pattern.AskTimeoutException]].
+
+The `mapTo` class parameter is used to cast the incoming responses to the expected response type.
+
+Similar to the plain ask pattern, the target actor is allowed to reply with `akka.util.Status`.
+An `akka.util.Status#Failure` will cause the stage to fail with the cause carried in the `Failure` message.
+
+Adheres to the [[ActorAttributes.SupervisionStrategy]] attribute.
+
+**emits** when the ask @scala[`Future`] @java[`CompletionStage`] returned by the provided function finishes for the next element in sequence
+
+
+**backpressures** when the number of ask @scala[`Future` s] @java[`CompletionStage` s] reaches the configured parallelism and the downstream backpressures
+
+**completes** when upstream completes and all ask @scala[`Future` s] @java[`CompletionStage` s] has been completed and all elements has been emitted
+
 
 ---------------------------------------------------------------
 
@@ -1314,10 +1442,34 @@ aggregated to the batched value.
 
 ---------------------------------------------------------------
 
+### extrapolate
+
+Allow for a faster downstream by expanding the last emitted element to an `Iterator`. For example, an
+`Iterator.continually(element)` will cause `extrapolate` to keep repeating the last emitted element. 
+
+All original elements are always emitted unchanged - the `Iterator` is only used whenever there is downstream
+ demand before upstream emits a new element.
+
+Includes an optional `initial` argument to prevent blocking the entire stream when there are multiple producers.
+
+See @ref:[Understanding extrapolate and expand](stream-rate.md#understanding-extrapolate-and-expand) for more information
+and examples.
+
+**emits** when downstream stops backpressuring
+
+**backpressures** when downstream backpressures
+
+**completes** when upstream completes
+
+---------------------------------------------------------------
+
 ### expand
 
-Allow for a faster downstream by expanding the last incoming element to an `Iterator`. For example
-`Iterator.continually(element)` to keep repeating the last incoming element.
+Like `extrapolate`, but does not have the `initial` argument, and the `Iterator` is also used in lieu of the original 
+element, allowing for it to be rewritten and/or filtered.
+
+See @ref:[Understanding extrapolate and expand](stream-rate.md#understanding-extrapolate-and-expand) for more information
+and examples.
 
 **emits** when downstream stops backpressuring
 
@@ -1765,6 +1917,8 @@ Emit each incoming element each of `n` outputs.
 
 **completes** when upstream completes
 
+**cancels** depends on the `eagerCancel` flag. If it is true, when any downstream cancels, if false, when all downstreams cancel.
+
 ---------------------------------------------------------------
 
 ### balance
@@ -1776,6 +1930,8 @@ Fan-out the stream to several streams. Each upstream element is emitted to the f
 **backpressures** when all of the outputs backpressure
 
 **completes** when upstream completes
+
+**cancels** depends on the `eagerCancel` flag. If it is true, when any downstream cancels, if false, when all downstreams cancel.
 
 ---------------------------------------------------------------
 
@@ -1789,6 +1945,8 @@ partitioner function applied to the element.
 **backpressures** when the chosen output backpressures
 
 **completes** when upstream completes and no output is pending
+
+**cancels** depends on the `eagerCancel` flag. If it is true, when any downstream cancels, if false, when all downstreams cancel.
 
 ---------------------------------------------------------------
 

@@ -5,7 +5,7 @@
 package akka.actor
 
 import java.io.Closeable
-import java.util.concurrent.{ ConcurrentHashMap, CountDownLatch, RejectedExecutionException, ThreadFactory }
+import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicReference
 
 import com.typesafe.config.{ Config, ConfigFactory }
@@ -24,7 +24,9 @@ import scala.util.control.{ ControlThrowable, NonFatal }
 import java.util.Optional
 
 import akka.actor.setup.{ ActorSystemSetup, Setup }
+import akka.annotation.InternalApi
 
+import scala.compat.java8.FutureConverters
 import scala.compat.java8.OptionConverters._
 
 object BootstrapSetup {
@@ -174,7 +176,7 @@ object ActorSystem {
 
   /**
    * Java API: Shortcut for creating an actor system with custom bootstrap settings.
-   * Same behaviour as calling `ActorSystem.create(name, ActorSystemSetup.create(bootstrapSettings))`
+   * Same behavior as calling `ActorSystem.create(name, ActorSystemSetup.create(bootstrapSettings))`
    */
   def create(name: String, bootstrapSetup: BootstrapSetup): ActorSystem =
     create(name, ActorSystemSetup.create(bootstrapSetup))
@@ -246,7 +248,7 @@ object ActorSystem {
 
   /**
    * Scala API: Shortcut for creating an actor system with custom bootstrap settings.
-   * Same behaviour as calling `ActorSystem(name, ActorSystemSetup(bootstrapSetup))`
+   * Same behavior as calling `ActorSystem(name, ActorSystemSetup(bootstrapSetup))`
    */
   def apply(name: String, bootstrapSetup: BootstrapSetup): ActorSystem =
     create(name, ActorSystemSetup.create(bootstrapSetup))
@@ -550,6 +552,16 @@ abstract class ActorSystem extends ActorRefFactory {
   def whenTerminated: Future[Terminated]
 
   /**
+   * Returns a CompletionStage which will be completed after the ActorSystem has been terminated
+   * and termination hooks have been executed. If you registered any callback with
+   * [[ActorSystem#registerOnTermination]], the returned CompletionStage from this method will not complete
+   * until all the registered callbacks are finished. Be careful to not schedule any operations
+   * on the `dispatcher` of this actor system as it will have been shut down before this
+   * future completes.
+   */
+  def getWhenTerminated: CompletionStage[Terminated]
+
+  /**
    * Registers the provided extension and creates its payload, if this extension isn't already registered
    * This method has putIfAbsent-semantics, this method can potentially block, waiting for the initialization
    * of the payload, if is in the process of registration from another Thread of execution
@@ -632,6 +644,10 @@ abstract class ExtendedActorSystem extends ActorSystem {
 
 }
 
+/**
+ * Internal API
+ */
+@InternalApi
 private[akka] class ActorSystemImpl(
   val name:                String,
   applicationConfig:       Config,
@@ -784,6 +800,7 @@ private[akka] class ActorSystemImpl(
   private[this] final val terminationCallbacks = new TerminationCallbacks(provider.terminationFuture)(dispatcher)
 
   override def whenTerminated: Future[Terminated] = terminationCallbacks.terminationFuture
+  override def getWhenTerminated: CompletionStage[Terminated] = FutureConverters.toJava(whenTerminated)
   def lookupRoot: InternalActorRef = provider.rootGuardian
   def guardian: LocalActorRef = provider.guardian
   def systemGuardian: LocalActorRef = provider.systemGuardian
@@ -791,10 +808,25 @@ private[akka] class ActorSystemImpl(
   def /(actorName: String): ActorPath = guardian.path / actorName
   def /(path: Iterable[String]): ActorPath = guardian.path / path
 
+  @volatile private var _initialized = false
+  /**
+   *  Asserts that the ActorSystem has been fully initialized. Can be used to guard code blocks that might accidentally
+   *  be run during initialization but require a fully initialized ActorSystem before proceeding.
+   */
+  def assertInitialized(): Unit =
+    if (!_initialized)
+      throw new IllegalStateException(
+        "The calling code expected that the ActorSystem was initialized but it wasn't yet. " +
+          "This is probably a bug in the ActorSystem initialization sequence often related to initialization of extensions. " +
+          "Please report at https://github.com/akka/akka/issues."
+      )
   private lazy val _start: this.type = try {
     registerOnTermination(stopScheduler())
     // the provider is expected to start default loggers, LocalActorRefProvider does this
     provider.init(this)
+    // at this point it should be initialized "enough" for most extensions that we might want to guard against otherwise
+    _initialized = true
+
     if (settings.LogDeadLetters > 0)
       logDeadLetterListener = Some(systemActorOf(Props[DeadLetterListener], "deadLetterListener"))
     eventStream.startUnsubscriber()

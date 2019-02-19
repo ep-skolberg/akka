@@ -1,6 +1,7 @@
 /**
- * Copyright (C) 2009-2017 Lightbend Inc. <http://www.lightbend.com>
+ * Copyright (C) 2009-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka
 
 import org.scalatest.{ Matchers, WordSpec }
@@ -58,7 +59,7 @@ class AkkaVersionSpec extends WordSpec with Matchers {
     }
 
     "succeed if Akka version is SNAPSHOT" in {
-      AkkaVersion.require("AkkaVersionSpec", "2.5.6", "2.5.9")
+      AkkaVersion.require("AkkaVersionSpec", "2.5.6", "2.5.12")
     }
 
     "succeed if Akka version is timestamped SNAPSHOT" in {

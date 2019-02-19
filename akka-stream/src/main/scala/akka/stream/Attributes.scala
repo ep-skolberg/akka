@@ -1,6 +1,7 @@
 /**
  * Copyright (C) 2014-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.stream
 
 import java.util.Optional
@@ -17,6 +18,8 @@ import akka.stream.impl.TraversalBuilder
 
 import scala.compat.java8.OptionConverters._
 import akka.util.{ ByteString, OptionVal }
+
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * Holds attributes which can be used to alter [[akka.stream.scaladsl.Flow]] / [[akka.stream.javadsl.Flow]]
@@ -68,7 +71,7 @@ final case class Attributes(attributeList: List[Attributes.Attribute] = Nil) {
    * This is the expected way for stages to access attributes.
    */
   def getAttribute[T <: Attribute](c: Class[T]): Optional[T] =
-    (attributeList.collectFirst { case attr if c.isInstance(attr) ⇒ c.cast(attr) }).asJava
+    attributeList.collectFirst { case attr if c.isInstance(attr) ⇒ c.cast(attr) }.asJava
 
   /**
    * Scala API: Get the most specific attribute value for a given Attribute type or subclass thereof or
@@ -126,7 +129,7 @@ final case class Attributes(attributeList: List[Attributes.Attribute] = Nil) {
 
     find(attributeList) match {
       case OptionVal.Some(t) ⇒ t.asInstanceOf[T]
-      case OptionVal.None    ⇒ throw new IllegalStateException(s"Mandatory attribute ${c} not found")
+      case OptionVal.None    ⇒ throw new IllegalStateException(s"Mandatory attribute [$c] not found")
     }
   }
 
@@ -331,7 +334,7 @@ object Attributes {
    * Passing in null as any of the arguments sets the level to its default value, which is:
    * `Debug` for `onElement` and `onFinish`, and `Error` for `onFailure`.
    */
-  def createLogLevels(onElement: Logging.LogLevel, onFinish: Logging.LogLevel, onFailure: Logging.LogLevel) =
+  def createLogLevels(onElement: Logging.LogLevel, onFinish: Logging.LogLevel, onFailure: Logging.LogLevel): Attributes =
     logLevels(
       onElement = Option(onElement).getOrElse(Logging.DebugLevel),
       onFinish = Option(onFinish).getOrElse(Logging.DebugLevel),
@@ -362,9 +365,34 @@ object Attributes {
 object ActorAttributes {
   import Attributes._
   final case class Dispatcher(dispatcher: String) extends MandatoryAttribute
+
+  object Dispatcher {
+    /**
+     * INTERNAL API
+     * Resolves the dispatcher's name with a fallback to the default blocking IO dispatcher.
+     * Note that `IODispatcher.dispatcher` is not used here as the config used to create [[ActorMaterializerSettings]]
+     * is not easily accessible, instead the name is taken from `settings.blockingIoDispatcher`
+     */
+    @InternalApi
+    private[akka] def resolve(attributes: Attributes, settings: ActorMaterializerSettings): String =
+      attributes.mandatoryAttribute[Dispatcher] match {
+        case IODispatcher           ⇒ settings.blockingIoDispatcher
+        case Dispatcher(dispatcher) ⇒ dispatcher
+      }
+
+    /**
+     * INTERNAL API
+     * Resolves the dispatcher name with a fallback to the default blocking IO dispatcher.
+     */
+    @InternalApi
+    private[akka] def resolve(context: MaterializationContext): String =
+      resolve(context.effectiveAttributes, ActorMaterializerHelper.downcast(context.materializer).settings)
+  }
+
   final case class SupervisionStrategy(decider: Supervision.Decider) extends MandatoryAttribute
 
-  val IODispatcher: Dispatcher = ActorAttributes.Dispatcher("akka.stream.default-blocking-io-dispatcher")
+  // this is actually a config key that needs reading and itself will contain the actual dispatcher name
+  val IODispatcher: Dispatcher = ActorAttributes.Dispatcher("akka.stream.materializer.blocking-io-dispatcher")
 
   /**
    * Specifies the name of the dispatcher. This also adds an async boundary.
@@ -398,7 +426,7 @@ object ActorAttributes {
    * Passing in null as any of the arguments sets the level to its default value, which is:
    * `Debug` for `onElement` and `onFinish`, and `Error` for `onFailure`.
    */
-  def createLogLevels(onElement: Logging.LogLevel, onFinish: Logging.LogLevel, onFailure: Logging.LogLevel) =
+  def createLogLevels(onElement: Logging.LogLevel, onFinish: Logging.LogLevel, onFailure: Logging.LogLevel): Attributes =
     logLevels(
       onElement = Option(onElement).getOrElse(Logging.DebugLevel),
       onFinish = Option(onFinish).getOrElse(Logging.DebugLevel),
@@ -412,5 +440,24 @@ object ActorAttributes {
    */
   def logLevels(onElement: Logging.LogLevel = Logging.DebugLevel, onFinish: Logging.LogLevel = Logging.DebugLevel, onFailure: Logging.LogLevel = Logging.ErrorLevel) =
     Attributes(LogLevels(onElement, onFinish, onFailure))
+
+}
+
+/**
+ * Attributes for stream refs ([[akka.stream.SourceRef]] and [[akka.stream.SinkRef]]).
+ * Note that more attributes defined in [[Attributes]] and [[ActorAttributes]].
+ */
+object StreamRefAttributes {
+  import Attributes._
+
+  /** Attributes specific to stream refs. */
+  sealed trait StreamRefAttribute extends Attribute
+
+  final case class SubscriptionTimeout(timeout: FiniteDuration) extends StreamRefAttribute
+
+  /**
+   * Specifies the subscription timeout within which the remote side MUST subscribe to the handed out stream reference.
+   */
+  def subscriptionTimeout(timeout: FiniteDuration): Attributes = Attributes(SubscriptionTimeout(timeout))
 
 }

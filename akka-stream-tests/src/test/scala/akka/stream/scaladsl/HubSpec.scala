@@ -1,6 +1,7 @@
 /**
  * Copyright (C) 2015-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.stream.scaladsl
 
 import akka.stream.{ ActorMaterializer, KillSwitches, ThrottleMode }
@@ -313,6 +314,10 @@ class HubSpec extends StreamSpec {
       downstream1.request(4)
       downstream2.request(8)
 
+      // sending the first element is in a race with downstream subscribing
+      // give a bit of time for the downstream to complete subscriptions
+      Thread.sleep(100)
+
       (1 to 8) foreach (upstream.sendNext(_))
 
       downstream1.expectNext(1, 2, 3, 4)
@@ -575,6 +580,10 @@ class HubSpec extends StreamSpec {
 
       downstream1.request(4)
       downstream2.request(8)
+
+      // to make sure downstream subscriptions are done before
+      // starting to send elements
+      Thread.sleep(100)
 
       (0 until 16) foreach (upstream.sendNext(_))
 

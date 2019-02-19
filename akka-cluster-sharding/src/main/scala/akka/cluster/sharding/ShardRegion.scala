@@ -1,6 +1,7 @@
 /**
  * Copyright (C) 2009-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.cluster.sharding
 
 import java.net.URLEncoder
@@ -33,7 +34,7 @@ object ShardRegion {
    */
   private[akka] def props(
     typeName:           String,
-    entityProps:        Props,
+    entityProps:        String ⇒ Props,
     settings:           ClusterShardingSettings,
     coordinatorPath:    String,
     extractEntityId:    ShardRegion.ExtractEntityId,
@@ -111,7 +112,7 @@ object ShardRegion {
      */
     def entityMessage(message: Any): Any
     /**
-     * Extract the entity id from an incoming `message`. Only messages that passed the [[#entityId]]
+     * Extract the shard id from an incoming `message`. Only messages that passed the [[#entityId]]
      * function will be used as input to this function.
      */
     def shardId(message: Any): String
@@ -366,7 +367,7 @@ object ShardRegion {
  */
 private[akka] class ShardRegion(
   typeName:           String,
-  entityProps:        Option[Props],
+  entityProps:        Option[String ⇒ Props],
   dataCenter:         Option[DataCenter],
   settings:           ClusterShardingSettings,
   coordinatorPath:    String,

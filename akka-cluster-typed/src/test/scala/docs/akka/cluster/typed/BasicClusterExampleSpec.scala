@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2018 Lightbend Inc. <https://www.lightbend.com>
+ */
+
 package docs.akka.cluster.typed
 
 import akka.testkit.SocketUtil
@@ -47,7 +51,7 @@ akka {
   ).withFallback(configSystem1)
 }
 
-class BasicClusterConfigSpec extends WordSpec with ScalaFutures with Eventually {
+class BasicClusterConfigSpec extends TypedAkkaSpec {
 
   import BasicClusterExampleSpec._
 
@@ -61,8 +65,8 @@ class BasicClusterConfigSpec extends WordSpec with ScalaFutures with Eventually 
           akka.cluster.seed-nodes = [ "akka.tcp://ClusterSystem@127.0.0.1:$sys1Port", "akka.tcp://ClusterSystem@127.0.0.1:$sys2Port" ]
         """)
 
-      val system1 = ActorSystem[Nothing](Actor.empty, "ClusterSystem", config(sys1Port).withFallback(configSystem1))
-      val system2 = ActorSystem[Nothing](Actor.empty, "ClusterSystem", config(sys2Port).withFallback(configSystem2))
+      val system1 = ActorSystem[Nothing](Behaviors.empty, "ClusterSystem", config(sys1Port).withFallback(configSystem1))
+      val system2 = ActorSystem[Nothing](Behaviors.empty, "ClusterSystem", config(sys2Port).withFallback(configSystem2))
       try {
         val cluster1 = Cluster(system1)
         val cluster2 = Cluster(system2)
@@ -105,8 +109,8 @@ class BasicClusterManualSpec extends WordSpec with ScalaFutures with Eventually 
   "Cluster API" must {
     "init cluster" in {
 
-      val system = ActorSystem[Nothing](Actor.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
-      val system2 = ActorSystem[Nothing](Actor.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
+      val system = ActorSystem[Nothing](Behaviors.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
+      val system2 = ActorSystem[Nothing](Behaviors.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
 
       try {
         //#cluster-create
@@ -139,9 +143,9 @@ class BasicClusterManualSpec extends WordSpec with ScalaFutures with Eventually 
     }
 
     "subscribe to cluster events" in {
-      implicit val system1 = ActorSystem[Nothing](Actor.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
-      val system2 = ActorSystem[Nothing](Actor.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
-      val system3 = ActorSystem[Nothing](Actor.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
+      implicit val system1 = ActorSystem[Nothing](Behaviors.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
+      val system2 = ActorSystem[Nothing](Behaviors.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
+      val system3 = ActorSystem[Nothing](Behaviors.empty, "ClusterSystem", noPort.withFallback(clusterConfig))
 
       try {
         val cluster1 = Cluster(system1)
@@ -149,27 +153,31 @@ class BasicClusterManualSpec extends WordSpec with ScalaFutures with Eventually 
         val cluster3 = Cluster(system3)
 
         //#cluster-subscribe
-        val testProbe = TestProbe[MemberEvent]()
-        cluster1.subscriptions ! Subscribe(testProbe.ref, classOf[MemberEvent])
+        val probe1 = TestProbe[MemberEvent]()(system1)
+        cluster1.subscriptions ! Subscribe(probe1.ref, classOf[MemberEvent])
         //#cluster-subscribe
 
         cluster1.manager ! Join(cluster1.selfMember.address)
         eventually {
           cluster1.state.members.toList.map(_.status) shouldEqual List(MemberStatus.up)
         }
-        testProbe.expectMsg(MemberUp(cluster1.selfMember))
+        probe1.expectMessage(MemberUp(cluster1.selfMember))
 
         cluster2.manager ! Join(cluster1.selfMember.address)
-        testProbe.expectMsgType[MemberJoined].member.address shouldEqual cluster2.selfMember.address
-        testProbe.expectMsgType[MemberUp].member.address shouldEqual cluster2.selfMember.address
+        probe1.within(10.seconds) {
+          probe1.expectMessageType[MemberJoined].member.address shouldEqual cluster2.selfMember.address
+          probe1.expectMessageType[MemberUp].member.address shouldEqual cluster2.selfMember.address
+        }
         eventually {
           cluster1.state.members.toList.map(_.status) shouldEqual List(MemberStatus.up, MemberStatus.up)
           cluster2.state.members.toList.map(_.status) shouldEqual List(MemberStatus.up, MemberStatus.up)
         }
 
         cluster3.manager ! Join(cluster1.selfMember.address)
-        testProbe.expectMsgType[MemberJoined].member.address shouldEqual cluster3.selfMember.address
-        testProbe.expectMsgType[MemberUp].member.address shouldEqual cluster3.selfMember.address
+        probe1.within(10.seconds) {
+          probe1.expectMessageType[MemberJoined].member.address shouldEqual cluster3.selfMember.address
+          probe1.expectMessageType[MemberUp].member.address shouldEqual cluster3.selfMember.address
+        }
         eventually {
           cluster1.state.members.toList.map(_.status) shouldEqual List(MemberStatus.up, MemberStatus.up, MemberStatus.up)
           cluster2.state.members.toList.map(_.status) shouldEqual List(MemberStatus.up, MemberStatus.up, MemberStatus.up)
@@ -178,9 +186,11 @@ class BasicClusterManualSpec extends WordSpec with ScalaFutures with Eventually 
 
         //#cluster-leave-example
         cluster1.manager ! Leave(cluster2.selfMember.address)
-        testProbe.expectMsgType[MemberLeft].member.address shouldEqual cluster2.selfMember.address
-        testProbe.expectMsgType[MemberExited].member.address shouldEqual cluster2.selfMember.address
-        testProbe.expectMsgType[MemberRemoved].member.address shouldEqual cluster2.selfMember.address
+        probe1.within(10.seconds) {
+          probe1.expectMessageType[MemberLeft].member.address shouldEqual cluster2.selfMember.address
+          probe1.expectMessageType[MemberExited].member.address shouldEqual cluster2.selfMember.address
+          probe1.expectMessageType[MemberRemoved].member.address shouldEqual cluster2.selfMember.address
+        }
         //#cluster-leave-example
 
         eventually {
@@ -188,11 +198,21 @@ class BasicClusterManualSpec extends WordSpec with ScalaFutures with Eventually 
           cluster3.state.members.toList.map(_.status) shouldEqual List(MemberStatus.up, MemberStatus.up)
         }
 
+        eventually {
+          cluster2.isTerminated should ===(true)
+        }
+        // via coordinated shutdown
+        system2.whenTerminated.futureValue
+
         system1.log.info("Downing node 3")
         cluster1.manager ! Down(cluster3.selfMember.address)
-        testProbe.expectMsgType[MemberRemoved](10.seconds).member.address shouldEqual cluster3.selfMember.address
+        probe1.expectMessageType[MemberRemoved](10.seconds).member.address shouldEqual cluster3.selfMember.address
 
-        testProbe.expectNoMsg(1000.millis)
+        probe1.expectNoMessage()
+
+        // via coordinated shutdown
+        system3.whenTerminated.futureValue
+
       } finally {
         system1.terminate().futureValue
         system2.terminate().futureValue

@@ -1,13 +1,16 @@
 /**
  * Copyright (C) 2014-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package docs.akka.typed
 
 //#imports
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
 import akka.actor.typed._
-import akka.actor.typed.scaladsl.Actor
-import akka.actor.typed.scaladsl.ActorContext
-import akka.testkit.typed.TestKit
+import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, MutableBehavior }
+import akka.testkit.typed.scaladsl.ActorTestKit
 
 import scala.concurrent.duration._
 import scala.concurrent.Await
@@ -18,13 +21,13 @@ object MutableIntroSpec {
   //#chatroom-actor
   object ChatRoom {
     //#chatroom-protocol
-    sealed trait Command
+    sealed trait RoomCommand
     final case class GetSession(screenName: String, replyTo: ActorRef[SessionEvent])
-      extends Command
+      extends RoomCommand
     //#chatroom-protocol
     //#chatroom-behavior
-    private final case class PostSessionMessage(screenName: String, message: String)
-      extends Command
+    private final case class PublishSessionMessage(screenName: String, message: String)
+      extends RoomCommand
     //#chatroom-behavior
     //#chatroom-protocol
 
@@ -33,40 +36,57 @@ object MutableIntroSpec {
     final case class SessionDenied(reason: String) extends SessionEvent
     final case class MessagePosted(screenName: String, message: String) extends SessionEvent
 
-    final case class PostMessage(message: String)
+    trait SessionCommand
+    final case class PostMessage(message: String) extends SessionCommand
+    private final case class NotifyClient(message: MessagePosted) extends SessionCommand
     //#chatroom-protocol
     //#chatroom-behavior
 
-    def behavior(): Behavior[Command] =
-      Actor.mutable[Command](ctx ⇒ new ChatRoomBehavior(ctx))
+    def behavior(): Behavior[RoomCommand] =
+      Behaviors.setup[RoomCommand](ctx ⇒ new ChatRoomBehavior(ctx))
 
-    class ChatRoomBehavior(ctx: ActorContext[Command]) extends Actor.MutableBehavior[Command] {
-      private var sessions: List[ActorRef[SessionEvent]] = List.empty
+    class ChatRoomBehavior(ctx: ActorContext[RoomCommand]) extends MutableBehavior[RoomCommand] {
+      private var sessions: List[ActorRef[SessionCommand]] = List.empty
 
-      override def onMessage(msg: Command): Behavior[Command] = {
+      override def onMessage(msg: RoomCommand): Behavior[RoomCommand] = {
         msg match {
           case GetSession(screenName, client) ⇒
-            val wrapper = ctx.spawnAdapter {
-              p: PostMessage ⇒ PostSessionMessage(screenName, p.message)
-            }
-            client ! SessionGranted(wrapper)
-            sessions = client :: sessions
+            // create a child actor for further interaction with the client
+            val ses = ctx.spawn(
+              session(ctx.self, screenName, client),
+              name = URLEncoder.encode(screenName, StandardCharsets.UTF_8.name))
+            client ! SessionGranted(ses)
+            sessions = ses :: sessions
             this
-          case PostSessionMessage(screenName, message) ⇒
-            val mp = MessagePosted(screenName, message)
-            sessions foreach (_ ! mp)
+          case PublishSessionMessage(screenName, message) ⇒
+            val notification = NotifyClient(MessagePosted(screenName, message))
+            sessions foreach (_ ! notification)
             this
         }
       }
-
     }
+
+    private def session(
+      room:       ActorRef[PublishSessionMessage],
+      screenName: String,
+      client:     ActorRef[SessionEvent]): Behavior[SessionCommand] =
+      Behaviors.receiveMessage {
+        case PostMessage(message) ⇒
+          // from client, publish to others via the room
+          room ! PublishSessionMessage(screenName, message)
+          Behaviors.same
+        case NotifyClient(message) ⇒
+          // published from the room
+          client ! message
+          Behaviors.same
+      }
     //#chatroom-behavior
   }
   //#chatroom-actor
 
 }
 
-class MutableIntroSpec extends TestKit with TypedAkkaSpecWithShutdown {
+class MutableIntroSpec extends ActorTestKit with TypedAkkaSpecWithShutdown {
 
   import MutableIntroSpec._
 
@@ -76,36 +96,34 @@ class MutableIntroSpec extends TestKit with TypedAkkaSpecWithShutdown {
       import ChatRoom._
 
       val gabbler =
-        Actor.immutable[SessionEvent] { (_, msg) ⇒
-          msg match {
-            case SessionDenied(reason) ⇒
-              println(s"cannot start chat room session: $reason")
-              Actor.stopped
-            case SessionGranted(handle) ⇒
-              handle ! PostMessage("Hello World!")
-              Actor.same
-            case MessagePosted(screenName, message) ⇒
-              println(s"message has been posted by '$screenName': $message")
-              Actor.stopped
-          }
+        Behaviors.receiveMessage[SessionEvent] {
+          case SessionDenied(reason) ⇒
+            println(s"cannot start chat room session: $reason")
+            Behaviors.stopped
+          case SessionGranted(handle) ⇒
+            handle ! PostMessage("Hello World!")
+            Behaviors.same
+          case MessagePosted(screenName, message) ⇒
+            println(s"message has been posted by '$screenName': $message")
+            Behaviors.stopped
         }
       //#chatroom-gabbler
 
       //#chatroom-main
       val main: Behavior[String] =
-        Actor.deferred { ctx ⇒
+        Behaviors.setup { ctx ⇒
           val chatRoom = ctx.spawn(ChatRoom.behavior(), "chatroom")
           val gabblerRef = ctx.spawn(gabbler, "gabbler")
           ctx.watch(gabblerRef)
 
-          Actor.immutablePartial[String] {
-            case (_, "go") ⇒
+          Behaviors.receiveMessagePartial[String] {
+            case "go" ⇒
               chatRoom ! GetSession("ol’ Gabbler", gabblerRef)
-              Actor.same
-          } onSignal {
+              Behaviors.same
+          } receiveSignal {
             case (_, Terminated(_)) ⇒
               println("Stopping guardian")
-              Actor.stopped
+              Behaviors.stopped
           }
         }
 

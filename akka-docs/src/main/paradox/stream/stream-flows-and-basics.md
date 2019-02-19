@@ -185,7 +185,7 @@ specification, which Akka is a founding member of.
 
 The user of the library does not have to write any explicit back-pressure handling code — it is built in
 and dealt with automatically by all of the provided Akka Streams processing stages. It is possible however to add
-explicit buffer stages with overflow strategies that can influence the behaviour of the stream. This is especially important
+explicit buffer stages with overflow strategies that can influence the behavior of the stream. This is especially important
 in complex processing graphs which may even contain loops (which *must* be treated with very special
 care, as explained in @ref:[Graph cycles, liveness and deadlocks](stream-graphs.md#graph-cycles)).
 
@@ -313,10 +313,6 @@ is needed in order to allow the stream to run at all, you will have to insert ex
 
 @@@
 
-The new fusing behavior can be disabled by setting the configuration parameter `akka.stream.materializer.auto-fusing=off`.
-In that case you can still manually fuse those graphs which shall run on less Actors. With the exception of the
-`SslTlsStage` and the `groupBy` operator all built-in processing stages can be fused.
-
 <a id="flow-combine-mat"></a>
 ### Combining materialized values
 
@@ -337,6 +333,20 @@ In Graphs it is possible to access the materialized value from inside the stream
 
 @@@
 
+### Source pre-materialization
+
+There are situations in which you require a `Source` materialized value **before** the `Source` gets hooked up to the rest of the graph.
+This is particularly useful in the case of "materialized value powered" `Source`s, like `Source.queue`, `Source.actorRef` or `Source.maybe`.
+
+By using the `preMaterialize` operator on a `Source`, you can obtain its materialized value and another `Source`. The latter can be used
+to consume messages from the original `Source`. Note that this can be materialized multiple times.
+
+Scala
+:   @@snip [FlowDocSpec.scala]($code$/scala/docs/stream/FlowDocSpec.scala) { #source-prematerialization }
+
+Java
+:   @@snip [FlowDocTest.java]($code$/java/jdocs/stream/FlowDocTest.java) { #source-prematerialization }
+
 ## Stream ordering
 
 In Akka Streams almost all computation stages *preserve input order* of elements. This means that if inputs `{IA1,IA2,...,IAn}`
@@ -356,7 +366,7 @@ If you find yourself in need of fine grained control over order of emitted eleme
 scenarios consider using `MergePreferred`, `MergePrioritized` or `GraphStage` – which gives you full control over how the
 merge is performed.
 
-# Actor Materializer Lifecycle
+## Actor Materializer Lifecycle
 
 An important aspect of working with streams and actors is understanding an `ActorMaterializer`'s life-cycle.
 The materializer is bound to the lifecycle of the `ActorRefFactory` it is created from, which in practice will

@@ -13,64 +13,26 @@ Akka persistence is inspired by and the official replacement of the [eventsource
 concepts and architecture of [eventsourced](https://github.com/eligosource/eventsourced) but significantly differs on API and implementation level. See also
 @ref:[migration-eventsourced-2.3](project/migration-guide-eventsourced-2.3.x.md)
 
-## Dependencies
+## Dependency
 
-Akka persistence is a separate jar file. Make sure that you have the following dependency in your project:
+To use Akka Persistence, add the module to your project:
 
-sbt
-:   @@@vars
-    ```
-    "com.typesafe.akka" %% "akka-persistence" % "$akka.version$"
-    ```
-    @@@
+@@dependency[sbt,Maven,Gradle] {
+  group="com.typesafe.akka"
+  artifact="akka-persistence_$scala.binary_version$"
+  version="$akka.version$"
+}
 
-Gradle
-:   @@@vars
-    ``` 
-    compile group: 'com.typesafe.akka', name: 'akka-persistence_$scala.binary_version$', version: '$akka.version$'
-    ```
-    @@@
-
-Maven
-:   @@@vars
-    ```
-    <dependency>
-      <groupId>com.typesafe.akka</groupId>
-      <artifactId>akka-persistence_$scala.binary_version$</artifactId>
-      <version>$akka.version$</version>
-    </dependency>
-    ```
-    @@@
-
-The Akka persistence extension comes with few built-in persistence plugins, including
+The Akka Persistence extension comes with few built-in persistence plugins, including
 in-memory heap based journal, local file-system based snapshot-store and LevelDB based journal.
 
-LevelDB based plugins will require the following additional dependency declaration:
+LevelDB-based plugins will require the following additional dependency:
 
-sbt
-:   @@@vars
-    ```
-    "org.fusesource.leveldbjni"   % "leveldbjni-all"   % "1.8"
-    ```
-    @@@
-
-Gradle
-:   @@@vars
-    ```
-    compile group: 'org.fusesource.leveldbjni', name: 'leveldbjni-all', version: '1.8' 
-    ```
-    @@@
-
-Maven
-:   @@@vars
-    ```
-    <dependency>
-      <groupId>org.fusesource.leveldbjni</groupId>
-      <artifactId>leveldbjni-all</artifactId>
-      <version>1.8</version>
-    </dependency>
-    ```
-    @@@
+@@dependency[sbt,Maven,Gradle] {
+  group="org.fusesource.leveldbjni"
+  artifact="leveldbjni-all"
+  version="1.8"
+}
 
 ## Architecture
 
@@ -86,10 +48,9 @@ The storage backend of a journal is pluggable. The persistence extension comes w
 Replicated journals are available as [Community plugins](http://akka.io/community/).
  * *Snapshot store*: A snapshot store persists snapshots of a persistent actor's internal state. Snapshots are
 used for optimizing recovery times. The storage backend of a snapshot store is pluggable.
-The persistence extension comes with a "local" snapshot storage plugin, which writes to the local filesystem.
+The persistence extension comes with a "local" snapshot storage plugin, which writes to the local filesystem. Replicated snapshot stores are available as [Community plugins](http://akka.io/community/)
  * *Event sourcing*. Based on the building blocks described above, Akka persistence provides abstractions for the
-development of event sourced applications (see section [Event sourcing](#event-sourcing))
-Replicated snapshot stores are available as [Community plugins](http://akka.io/community/).
+development of event sourced applications (see section [Event sourcing](#event-sourcing)).
 
 <a id="event-sourcing"></a>
 ## Event sourcing
@@ -103,8 +64,8 @@ needs to be recovered, only the persisted events are replayed of which we know t
 In other words, events cannot fail when being replayed to a persistent actor, in contrast to commands. Event sourced
 actors may of course also process commands that do not change application state such as query commands for example.
 
-Another excellent article about "thinking in Events" is [Events As First-Class Citizens](https://hackernoon.com/events-as-first-class-citizens-8633e8479493) by Randy Shoup. It is a short and recommended read if you're starting 
-developing Events based applications. 
+Another excellent article about "thinking in Events" is [Events As First-Class Citizens](https://hackernoon.com/events-as-first-class-citizens-8633e8479493) by Randy Shoup. It is a short and recommended read if you're starting
+developing Events based applications.
 
 Akka persistence supports event sourcing with the @scala[`PersistentActor` trait]@java[`AbstractPersistentActor` abstract class]. An actor that extends this @scala[trait]@java[class] uses the
 `persist` method to persist and handle events. The behavior of @scala[a `PersistentActor`]@java[an `AbstractPersistentActor`]
@@ -188,8 +149,8 @@ By default, a persistent actor is automatically recovered on start and on restar
 New messages sent to a persistent actor during recovery do not interfere with replayed messages.
 They are stashed and received by a persistent actor after recovery phase completes.
 
-The number of concurrent recoveries that can be in progress at the same time is limited 
-to not overload the system and the backend data store. When exceeding the limit the actors will wait 
+The number of concurrent recoveries that can be in progress at the same time is limited
+to not overload the system and the backend data store. When exceeding the limit the actors will wait
 until other recoveries have been completed. This is configured by:
 
 ```
@@ -316,7 +277,7 @@ Java
     Persistence.get(getContext().getSystem()).defaultInternalStashOverflowStrategy();
     ```
     @@@
-    
+
 @@@ note
 
 The bounded mailbox should be avoided in the persistent actor, by which the messages come from storage backends may
@@ -364,11 +325,12 @@ The callback will not be invoked if the actor is restarted (or stopped) in betwe
 ### Deferring actions until preceding persist handlers have executed
 
 Sometimes when working with `persistAsync` or `persist` you may find that it would be nice to define some actions in terms of
-''happens-after the previous `persistAsync`/`persist` handlers have been invoked''. `PersistentActor` provides an utility method
-called `deferAsync`, which works similarly to `persistAsync` yet does not persist the passed in event. It is recommended to
-use it for *read* operations, and actions which do not have corresponding events in your domain model.
+''happens-after the previous `persistAsync`/`persist` handlers have been invoked''. `PersistentActor` provides utility methods
+called `defer` and `deferAsync`, which work similarly to `persist` and `persistAsync` respectively yet do not persist the
+passed in event. It is recommended to use them for *read* operations, and actions which do not have corresponding events in your
+domain model.
 
-Using this method is very similar to the persist family of methods, yet it does **not** persist the passed in event.
+Using those methods is very similar to the persist family of methods, yet they do **not** persist the passed in event.
 It will be kept in memory and used when invoking the handler.
 
 Scala
@@ -378,7 +340,7 @@ Java
 :  @@snip [LambdaPersistenceDocTest.java]($code$/java/jdocs/persistence/LambdaPersistenceDocTest.java) { #defer }
 
 Notice that the `sender()` is **safe** to access in the handler callback, and will be pointing to the original sender
-of the command for which this `deferAsync` handler was called.
+of the command for which this `defer` or `deferAsync` handler was called.
 
 The calling side will get the responses in this (guaranteed) order:
 
@@ -388,7 +350,7 @@ Scala
 Java
 :  @@snip [LambdaPersistenceDocTest.java]($code$/java/jdocs/persistence/LambdaPersistenceDocTest.java) { #defer-caller }
 
-You can also call `deferAsync` with `persist`.
+You can also call `defer` or `deferAsync` with `persist`.
 
 Scala
 :  @@snip [PersistenceDocSpec.scala]($code$/scala/docs/persistence/PersistenceDocSpec.scala) { #defer-with-persist }
@@ -399,7 +361,7 @@ Java
 @@@ warning
 
 The callback will not be invoked if the actor is restarted (or stopped) in between the call to
-`deferAsync` and the journal has processed and confirmed all preceding writes.
+`defer` or `deferAsync` and the journal has processed and confirmed all preceding writes.
 
 @@@
 
@@ -411,7 +373,7 @@ retain both the thread safety (including the right value of @scala[`sender()`]@j
 
 In general it is encouraged to create command handlers which do not need to resort to nested event persisting,
 however there are situations where it may be useful. It is important to understand the ordering of callback execution in
-those situations, as well as their implication on the stashing behaviour (that `persist()` enforces). In the following
+those situations, as well as their implication on the stashing behavior (that `persist()` enforces). In the following
 example two persist calls are issued, and each of them issues another persist inside its callback:
 
 Scala
@@ -592,7 +554,7 @@ Consider using explicit shut-down messages instead of `PoisonPill` when working 
 @@@
 
 The example below highlights how messages arrive in the Actor's mailbox and how they interact with its internal stashing
-mechanism when `persist()` is used. Notice the early stop behaviour that occurs when `PoisonPill` is used:
+mechanism when `persist()` is used. Notice the early stop behavior that occurs when `PoisonPill` is used:
 
 Scala
 :  @@snip [PersistenceDocSpec.scala]($code$/scala/docs/persistence/PersistenceDocSpec.scala) { #safe-shutdown }
@@ -649,7 +611,7 @@ akka.persistence.journal.leveldb.replay-filter {
 <a id="snapshots"></a>
 ## Snapshots
 
-As you model your domain using actors, you may notice that some actors may be prone to accumulating extremely long event logs and experiencing long recovery times. Sometimes, the right approach may be to split out into a set of shorter lived actors. However, when this is not an option, you can use snapshots to reduce recovery times drastically. 
+As you model your domain using actors, you may notice that some actors may be prone to accumulating extremely long event logs and experiencing long recovery times. Sometimes, the right approach may be to split out into a set of shorter lived actors. However, when this is not an option, you can use snapshots to reduce recovery times drastically.
 
 Persistent actors can save snapshots of internal state by calling the  `saveSnapshot` method. If saving of a snapshot
 succeeds, the persistent actor receives a `SaveSnapshotSuccess` message, otherwise a `SaveSnapshotFailure` message
@@ -724,6 +686,20 @@ status messages as illustrated in the following table.
 If failure messages are left unhandled by the actor, a default warning log message will be logged for each incoming failure message.
 No default action is performed on the success messages, however you're free to handle them e.g. in order to delete
 an in memory representation of the snapshot, or in the case of failure to attempt save the snapshot again.
+
+
+## Scaling out
+
+In a use case where the number of persistent actors needed are higher than what would fit in the memory of one node or
+where resilience is important so that if a node crashes the persistent actors are quickly started on a new node and can
+resume operations @ref:[Cluster Sharding](cluster-sharding.md) is an excellent fit to spread persistent actors over a 
+cluster and address them by id.
+
+The [Lagom framework](https://www.lagom-framework.com), which is built on top of Akka encodes many of the best practices 
+around this. For more details see @java[[Managing Data Persistence](https://www.lagomframework.com/documentation/current/java/ES_CQRS.html)]
+@scala[[Managing Data Persistence](https://www.lagomframework.com/documentation/current/scala/ES_CQRS.html)] and 
+@java[[Persistent Entity](https://www.lagomframework.com/documentation/current/java/PersistentEntity.html)] 
+@scala[[Persistent Entity](https://www.lagomframework.com/documentation/current/scala/PersistentEntity.html)] in the Lagom documentation.
 
 <a id="at-least-once-delivery"></a>
 ## At-Least-Once Delivery
@@ -1057,7 +1033,7 @@ akka {
       plugin = "akka.persistence.snapshot-store.local"
       auto-start-snapshot-stores = ["akka.persistence.snapshot-store.local"]
     }
-  
+
   }
 
 }
@@ -1238,7 +1214,7 @@ sbt
 Gradle
 :   @@@vars
     ```
-    compile group: 'org.fusesource.leveldbjni', name: 'leveldbjni-all', version: '1.8' 
+    compile group: 'org.fusesource.leveldbjni', name: 'leveldbjni-all', version: '1.8'
     ```
     @@@
 
@@ -1252,7 +1228,7 @@ Maven
     </dependency>
     ```
     @@@
-  
+
 The default location of LevelDB files is a directory named `journal` in the current working
 directory. This location can be changed by configuration where the specified path can be relative or absolute:
 
@@ -1260,11 +1236,11 @@ directory. This location can be changed by configuration where the specified pat
 
 With this plugin, each actor system runs its own private LevelDB instance.
 
-One peculiarity of LevelDB is that the deletion operation does not remove messages from the journal, but adds 
-a "tombstone" for each deleted message instead. In the case of heavy journal usage, especially one including frequent 
-deletes, this may be an issue as users may find themselves dealing with continuously increasing journal sizes. To 
+One peculiarity of LevelDB is that the deletion operation does not remove messages from the journal, but adds
+a "tombstone" for each deleted message instead. In the case of heavy journal usage, especially one including frequent
+deletes, this may be an issue as users may find themselves dealing with continuously increasing journal sizes. To
 this end, LevelDB offers a special journal compaction function that is exposed via the following configuration:
-   
+
 @@snip [PersistencePluginDocSpec.scala]($code$/scala/docs/persistence/PersistencePluginDocSpec.scala) { #compaction-intervals-config }
 
 <a id="shared-leveldb-journal"></a>
@@ -1472,3 +1448,17 @@ Note that `journalPluginId` and `snapshotPluginId` must refer to properly config
 plugin entries with a standard `class` property as well as settings which are specific for those plugins, i.e.:
 
 @@snip [PersistenceMultiDocSpec.scala]($code$/scala/docs/persistence/PersistenceMultiDocSpec.scala) { #override-config }
+
+## Give persistence plugin configurations at runtime
+
+By default, a persistent actor will use the configuration loaded at `ActorSystem` creation time to create journal and snapshot store plugins.
+
+When the persistent actor overrides the `journalPluginConfig` and `snapshotPluginConfig` methods,
+the actor will use the declared `Config` objects with a fallback on the default configuration.
+It allows a dynamic configuration of the journal and the snapshot store at runtime:
+
+Scala
+:  @@snip [PersistenceMultiDocSpec.scala]($code$/scala/docs/persistence/PersistenceMultiDocSpec.scala) { #runtime-config }
+
+Java
+:  @@snip [PersistenceMultiDocTest.java]($code$/java/jdocs/persistence/PersistenceMultiDocTest.java) { #runtime-config }

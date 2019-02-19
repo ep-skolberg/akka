@@ -2,7 +2,7 @@
 
 @@@ note
 
-This document describes the design concepts of the clustering.
+This document describes the design concepts of Akka Cluster.
 
 @@@
 
@@ -11,6 +11,12 @@ This document describes the design concepts of the clustering.
 Akka Cluster provides a fault-tolerant decentralized peer-to-peer based cluster
 [membership](#membership) service with no single point of failure or single point of bottleneck.
 It does this using [gossip](#gossip) protocols and an automatic [failure detector](#failure-detector).
+
+Akka cluster allows for building distributed applications, where one application or service span multiple nodes (in practice multiple `ActorSystem`s). 
+It is not intended as a general communication between different applications or services (for example different microservices). See the discussion on 
+@scala[[Internal and External Commmunication](https://www.lagomframework.com/documentation/current/scala/InternalAndExternalCommunication.html)]
+@java[[Internal and External Communication](https://www.lagomframework.com/documentation/current/java/InternalAndExternalCommunication.html)]
+in the docs of the [Lagom Framework](https://www.lagomframework.com) (where each microservice is an Akka Cluster) for some background on this.
 
 ## Terms
 
@@ -86,7 +92,7 @@ nodes have been downed.
 
 The failure detector is responsible for trying to detect if a node is
 `unreachable` from the rest of the cluster. For this we are using an
-implementation of [The Phi Accrual Failure Detector](http://www.jaist.ac.jp/~defago/files/pdf/IS_RR_2004_010.pdf) by Hayashibara et al.
+implementation of [The Phi Accrual Failure Detector](http://fubica.lsd.ufcg.edu.br/hp/cursos/cfsc/papers/hayashibara04theaccrual.pdf) by Hayashibara et al.
 
 An accrual failure detector decouples monitoring and interpretation. That makes
 them applicable to a wider area of scenarios and more adequate to build generic
@@ -296,6 +302,7 @@ The `leader` has the following duties:
 
  * shifting members in and out of the cluster
     * joining -> up
+    * weakly up -> up *(no convergence is required for this leader action to be performed)*
     * exiting -> removed
 
 #### Failure Detection and Unreachability

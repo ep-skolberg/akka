@@ -1,46 +1,38 @@
 /**
  * Copyright (C) 2014-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.actor.typed.scaladsl
 
-import scala.concurrent.{ Future, Promise }
-import akka.util.Timeout
-import akka.actor.InternalActorRef
-import akka.pattern.AskTimeoutException
-import akka.pattern.PromiseActorRef
-import akka.actor.Scheduler
-import akka.actor.RootActorPath
-import akka.actor.Address
-import akka.annotation.InternalApi
+import java.util.concurrent.TimeoutException
+
+import akka.actor.{ Address, InternalActorRef, RootActorPath, Scheduler }
 import akka.actor.typed.ActorRef
 import akka.actor.typed.internal.{ adapter ⇒ adapt }
+import akka.annotation.InternalApi
+import akka.pattern.PromiseActorRef
+import akka.util.Timeout
+
+import scala.concurrent.Future
 
 /**
  * The ask-pattern implements the initiator side of a request–reply protocol.
  * The `?` operator is pronounced as "ask".
  *
- * The party that asks may be within or without an Actor, since the
- * implementation will fabricate a (hidden) [[ActorRef]] that is bound to a
- * [[scala.concurrent.Promise]]. This ActorRef will need to be injected in the
- * message that is sent to the target Actor in order to function as a reply-to
- * address, therefore the argument to the ask / `?`
- * operator is not the message itself but a function that given the reply-to
- * address will create the message.
- *
- * {{{
- * case class Request(msg: String, replyTo: ActorRef[Reply])
- * case class Reply(msg: String)
- *
- * implicit val timeout = Timeout(3.seconds)
- * val target: ActorRef[Request] = ...
- * val f: Future[Reply] = target ? (Request("hello", _))
- * }}}
+ * See [[AskPattern.Askable.?]] for details
  */
 object AskPattern {
-  implicit class Askable[T](val ref: ActorRef[T]) extends AnyVal {
+
+  /**
+   * See [[?]]
+   */
+  implicit final class Askable[T](val ref: ActorRef[T]) extends AnyVal {
     /**
      * The ask-pattern implements the initiator side of a request–reply protocol.
      * The `?` operator is pronounced as "ask".
+     *
+     * Note that if you are inside of an actor you should prefer [[ActorContext.ask]]
+     * as that provides better safety.
      *
      * The party that asks may be within or without an Actor, since the
      * implementation will fabricate a (hidden) [[ActorRef]] that is bound to a
@@ -54,18 +46,24 @@ object AskPattern {
      * case class Request(msg: String, replyTo: ActorRef[Reply])
      * case class Reply(msg: String)
      *
+     * implicit val scheduler = system.scheduler
      * implicit val timeout = Timeout(3.seconds)
      * val target: ActorRef[Request] = ...
-     * val f: Future[Reply] = target ? (Request("hello", _))
+     * val f: Future[Reply] = target ? ref => (Request("hello", ref))
      * }}}
      */
-    def ?[U](f: ActorRef[U] ⇒ T)(implicit timeout: Timeout, scheduler: Scheduler): Future[U] =
+    def ?[U](f: ActorRef[U] ⇒ T)(implicit timeout: Timeout, scheduler: Scheduler): Future[U] = {
+      // We do not currently use the implicit scheduler, but want to require it
+      // because it might be needed when we move to a 'native' typed runtime, see #24219
       ref match {
         case a: adapt.ActorRefAdapter[_]    ⇒ askUntyped(ref, a.untyped, timeout, f)
         case a: adapt.ActorSystemAdapter[_] ⇒ askUntyped(ref, a.untyped.guardian, timeout, f)
         case a                              ⇒ throw new IllegalStateException("Only expect actor references to be ActorRefAdapter or ActorSystemAdapter until native system is implemented: " + a.getClass)
       }
+    }
   }
+
+  private val onTimeout: String ⇒ Throwable = msg ⇒ new TimeoutException(msg)
 
   private final class PromiseRef[U](target: ActorRef[_], untyped: InternalActorRef, timeout: Timeout) {
 
@@ -74,13 +72,13 @@ object AskPattern {
       if (untyped.isTerminated)
         (
           adapt.ActorRefAdapter[U](untyped.provider.deadLetters),
-          Future.failed[U](new AskTimeoutException(s"Recipient[$target] had already been terminated.")), null)
+          Future.failed[U](new TimeoutException(s"Recipient[$target] had already been terminated.")), null)
       else if (timeout.duration.length <= 0)
         (
           adapt.ActorRefAdapter[U](untyped.provider.deadLetters),
           Future.failed[U](new IllegalArgumentException(s"Timeout length must be positive, question not sent to [$target]")), null)
       else {
-        val a = PromiseActorRef(untyped.provider, timeout, target, "unknown")
+        val a = PromiseActorRef(untyped.provider, timeout, target, "unknown", onTimeout = onTimeout)
         val b = adapt.ActorRefAdapter[U](a)
         (b, a.result.future.asInstanceOf[Future[U]], a)
       }
@@ -98,5 +96,9 @@ object AskPattern {
     p.future
   }
 
+  /**
+   * INTERNAL API
+   */
+  @InternalApi
   private[typed] val AskPath = RootActorPath(Address("akka.actor.typed.internal", "ask"))
 }

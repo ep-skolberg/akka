@@ -1,6 +1,7 @@
 /**
  * Copyright (C) 2009-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.testkit
 
 import language.postfixOps
@@ -13,7 +14,7 @@ import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicInteger
 
 import akka.actor._
-import akka.util.{ BoxedType, OptionVal, Timeout }
+import akka.util.{ BoxedType, Timeout }
 
 import scala.util.control.NonFatal
 import scala.Some
@@ -660,6 +661,11 @@ trait TestKitBase {
     expectNoMsg_internal(max)
   }
 
+  /**
+   * Same as `expectNoMessage(remainingOrDefault)`, but correctly treating the timeFactor.
+   */
+  def expectNoMessage() { expectNoMsg_internal(remainingOrDefault) }
+
   private def expectNoMsg_internal(max: FiniteDuration) {
     val finish = System.nanoTime() + max.toNanos
     val pollInterval = 100.millis
@@ -796,7 +802,7 @@ trait TestKitBase {
    */
   def shutdown(
     actorSystem:          ActorSystem = system,
-    duration:             Duration    = 5.seconds.dilated.min(10.seconds),
+    duration:             Duration    = 10.seconds.dilated.min(10.seconds),
     verifySystemShutdown: Boolean     = false) {
     TestKit.shutdownActorSystem(actorSystem, duration, verifySystemShutdown)
   }

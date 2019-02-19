@@ -389,7 +389,18 @@ Scala
 Java
 :  @@snip [FutureDocTest.java]($code$/java/jdocs/future/FutureDocTest.java) { #imports7 #after }
 
+## Retry
+
+`akka.pattern.retry` will retry a @scala[`Future` class]@java[`CompletionStage` class] some number of times with a delay between each attempt.
+
+Scala
+:   @@snip [FutureDocSpec.scala]($code$/scala/docs/future/FutureDocSpec.scala) { #retry }
+
+Java
+:   @@snip [FutureDocTest.java]($code$/java/jdocs/future/FutureDocTest.java) { #imports8 #retry }
+
 @@@ div { .group-java }
+
 
 ## Java 8, CompletionStage and CompletableFuture
 
@@ -409,7 +420,7 @@ which means `scala-java8-compat` implementation is not used after the first mapp
 @@@ note { .group-java }
 
 After adding any additional computation stage to `CompletionStage` returned by `scala-java8-compat`
-(e.g. `CompletionStage` instances returned by Akka) it falls back to standard behaviour of Java `CompletableFuture`.
+(e.g. `CompletionStage` instances returned by Akka) it falls back to standard behavior of Java `CompletableFuture`.
 
 @@@
 

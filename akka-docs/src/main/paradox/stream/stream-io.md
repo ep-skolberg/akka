@@ -123,6 +123,29 @@ see
 @java[[Javadoc](http://doc.akka.io/japi/akka/current/akka/stream/javadsl/Framing.html#simpleFramingProtocol-int-)]
 for more information.
 
+@scala[[JsonFraming](http://doc.akka.io/api/akka/current/akka/stream/scaladsl/JsonFraming$.html)]@java[[JsonFraming](http://doc.akka.io/japi/akka/current/akka/stream/javadsl/JsonFraming.html#objectScanner-int-)] separates valid JSON objects from incoming `ByteString` objects:
+
+Scala
+:  @@snip [JsonFramingSpec.scala]($akka$akka-stream-tests/src/test/scala/akka/stream/scaladsl/JsonFramingSpec.scala) { #using-json-framing }
+
+Java
+:  @@snip [JsonFramingTest.java]($akka$akka-stream-tests/src/test/java/akka/stream/javadsl/JsonFramingTest.java) { #using-json-framing }
+
+### TLS
+
+Similar factories as shown above for raw TCP but where the data is encrypted using TLS are available from `Tcp` through `outgoingTlsConnection`, `bindTls` and `bindAndHandleTls`, see the @scala[@scaladoc[`Tcp Scaladoc`](akka.stream.scaladsl.Tcp)]@java[@javadoc[`Tcp Javadoc`](akka.stream.javadsl.Tcp)]  for details.
+
+Using TLS requires a keystore and a truststore and then a somewhat involved dance of configuring the SSLContext and the details for how the session should be negotiated:
+
+Scala
+:  @@snip [TcpSpec.scala]($akka$akka-stream-tests/src/test/scala/akka/stream/io/TcpSpec.scala) { #setting-up-ssl-context }
+
+Java
+:  @@snip [TcpTest.java]($akka$akka-stream-tests/src/test/java/akka/stream/javadsl/TcpTest.java) { #setting-up-ssl-context }
+
+
+The `SslContext` and `NegotiateFirstSession` instances can then be used with the binding or outgoing connection factory methods.
+
 ## Streaming File IO
 
 Akka Streams provide simple Sources and Sinks that can work with `ByteString` instances to perform IO operations
@@ -140,7 +163,7 @@ Java
 Please note that these processing stages are backed by Actors and by default are configured to run on a pre-configured
 threadpool-backed dispatcher dedicated for File IO. This is very important as it isolates the blocking file IO operations from the rest
 of the ActorSystem allowing each dispatcher to be utilised in the most efficient way. If you want to configure a custom
-dispatcher for file IO operations globally, you can do so by changing the `akka.stream.blocking-io-dispatcher`,
+dispatcher for file IO operations globally, you can do so by changing the `akka.stream.materializer.blocking-io-dispatcher`,
 or for a specific stage by specifying a custom Dispatcher in code, like this:
 
 Scala

@@ -1,15 +1,16 @@
 /**
  * Copyright (C) 2009-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.cluster.sharding.typed
 
 import akka.actor.typed.TypedAkkaSpecWithShutdown
 import akka.actor.typed.internal.adapter.ActorSystemAdapter
 import akka.cluster.sharding.typed.internal.ShardingSerializer
 import akka.serialization.SerializationExtension
-import akka.testkit.typed.TestKit
+import akka.testkit.typed.scaladsl.ActorTestKit
 
-class ShardingSerializerSpec extends TestKit with TypedAkkaSpecWithShutdown {
+class ShardingSerializerSpec extends ActorTestKit with TypedAkkaSpecWithShutdown {
 
   "The typed ShardingSerializer" must {
 
@@ -31,7 +32,8 @@ class ShardingSerializerSpec extends TestKit with TypedAkkaSpecWithShutdown {
     }
 
     "must serialize and deserialize StartEntity" in {
-      checkSerialization(StartEntity("abc"))
+      checkSerialization(scaladsl.StartEntity[Int]("abc"))
+      checkSerialization(javadsl.StartEntity.create(classOf[java.lang.Integer], "def"))
     }
   }
 }

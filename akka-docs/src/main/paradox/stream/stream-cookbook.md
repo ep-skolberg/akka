@@ -18,7 +18,7 @@ If you need a quick reference of the available processing stages used in the rec
 In this collection we show simple recipes that involve linear flows. The recipes in this section are rather
 general, more targeted recipes are available as separate sections (@ref:[Buffers and working with rate](stream-rate.md), @ref:[Working with streaming IO](stream-io.md)).
 
-### Logging elements of a stream
+### Logging in streams
 
 **Situation:** During development it is sometimes helpful to see what happens in a particular section of a stream.
 
@@ -31,14 +31,30 @@ Scala
 Java
 :   @@snip [RecipeLoggingElements.java]($code$/java/jdocs/stream/javadsl/cookbook/RecipeLoggingElements.java) { #println-debug }
 
-Another approach to logging is to use `log()` operation which allows configuring logging for elements flowing through
-the stream as well as completion and erroring.
+Another approach to logging is to use `log()` operation. This approach gives you more fine-grained control of logging levels for
+elements flowing through the stream, finish and failure of the stream.
 
 Scala
 :   @@snip [RecipeLoggingElements.scala]($code$/scala/docs/stream/cookbook/RecipeLoggingElements.scala) { #log-custom }
 
 Java
 :   @@snip [RecipeLoggingElements.java]($code$/java/jdocs/stream/javadsl/cookbook/RecipeLoggingElements.java) { #log-custom }
+
+### Creating a source that continuously evaluates a function
+
+**Situation:** A source is required that continuously provides elements obtained by evaluating a given function, so long as there is demand.
+
+The simplest implementation is to use a `Source.repeat` that produces some arbitrary element - e.g. `NotUsed` -
+and then map those elements to the function evaluation. E.g. if we have some `builderFunction()`, we can use:
+
+Scala
+:   @@snip [RecipeSourceFromFunction.scala]($code$/scala/docs/stream/cookbook/RecipeSourceFromFunction.scala) { #source-from-function }
+
+Java
+:   @@snip [RecipeSourceFromFunction.java]($code$/java/jdocs/stream/javadsl/cookbook/RecipeSourceFromFunction.java) { #source-from-function }
+
+Note: if the element-builder function touches mutable state, then a guaranteed single-threaded source should be used
+instead; e.g. `Source.unfold` or `Source.unfoldResource`.
 
 ### Flattening a stream of sequences
 

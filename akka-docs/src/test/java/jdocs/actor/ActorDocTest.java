@@ -412,7 +412,7 @@ public class ActorDocTest extends AbstractJavaTest {
     //#gracefulStop
     try {
       CompletionStage<Boolean> stopped =
-        gracefulStop(actorRef, Duration.create(5, TimeUnit.SECONDS), Manager.SHUTDOWN);
+        gracefulStop(actorRef, java.time.Duration.ofSeconds(5), Manager.SHUTDOWN);
       stopped.toCompletableFuture().get(6, TimeUnit.SECONDS);
       // the actor has been stopped
     } catch (AskTimeoutException e) {
@@ -741,7 +741,7 @@ public class ActorDocTest extends AbstractJavaTest {
       {
         watch(b);
         system.stop(a);
-        assertEquals(expectMsgClass(Duration.create(2, TimeUnit.SECONDS), Terminated.class).actor(), b);
+        assertEquals(expectMsgClass(java.time.Duration.ofSeconds(2), Terminated.class).actor(), b);
       }
     };
   }

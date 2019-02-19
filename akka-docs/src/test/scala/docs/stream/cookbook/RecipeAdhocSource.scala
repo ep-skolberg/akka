@@ -1,10 +1,13 @@
+/*
+ * Copyright (C) 2018 Lightbend Inc. <https://www.lightbend.com>
+ */
+
 package docs.stream.cookbook
 
 import java.util.concurrent.atomic.{ AtomicBoolean, AtomicInteger }
 
-import akka.stream.scaladsl.{ Keep, Sink, Source }
+import akka.stream.scaladsl.Source
 import akka.stream.testkit.scaladsl.TestSink
-import akka.stream.{ Graph, SourceShape }
 import akka.testkit.TimingTest
 import akka.{ Done, NotUsed }
 
@@ -47,8 +50,8 @@ class RecipeAdhocSource extends RecipeSpec {
         .runWith(TestSink.probe[String])
 
       sink.requestNext("a")
-      Thread.sleep(500)
-      shutdown.isCompleted should be(true)
+      Thread.sleep(200)
+      shutdown.future.futureValue should be(Done)
     }
 
     "not shut down the source when there are still demands" taggedAs TimingTest in {
@@ -88,8 +91,8 @@ class RecipeAdhocSource extends RecipeSpec {
 
       sink.requestNext("a")
       startedCount.get() should be(1)
-      Thread.sleep(500)
-      shutdown.isCompleted should be(true)
+      Thread.sleep(200)
+      shutdown.future.futureValue should be(Done)
     }
 
     "restart up to specified maxRetries" taggedAs TimingTest in {

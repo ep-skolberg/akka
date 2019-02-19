@@ -1,17 +1,18 @@
 /**
  * Copyright (C) 2014-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.stream.scaladsl
 
 import java.util.concurrent.CompletionStage
 
 import akka.actor.{ ActorRef, Cancellable, Props }
+import akka.annotation.InternalApi
 import akka.stream.actor.ActorPublisher
 import akka.stream.impl.Stages.DefaultAttributes
 import akka.stream.impl.fusing.GraphStages
 import akka.stream.impl.fusing.GraphStages._
 import akka.stream.impl.{ PublisherSource, _ }
-import akka.stream.stage.GraphStageWithMaterializedValue
 import akka.stream.{ Outlet, SourceShape, _ }
 import akka.util.ConstantFun
 import akka.{ Done, NotUsed }
@@ -20,9 +21,11 @@ import org.reactivestreams.{ Publisher, Subscriber }
 import scala.annotation.tailrec
 import scala.annotation.unchecked.uncheckedVariance
 import scala.collection.immutable
-import scala.compat.java8.FutureConverters._
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ Future, Promise }
+import akka.stream.stage.GraphStageWithMaterializedValue
+
+import scala.compat.java8.FutureConverters._
 
 /**
  * A `Source` is a set of stream processing steps that has one open output. It can comprise
@@ -84,6 +87,15 @@ final class Source[+Out, +Mat](
    */
   override def mapMaterializedValue[Mat2](f: Mat ⇒ Mat2): ReprMat[Out, Mat2] =
     new Source[Out, Mat2](traversalBuilder.transformMat(f.asInstanceOf[Any ⇒ Any]), shape)
+
+  /**
+   * Materializes this Source, immediately returning (1) its materialized value, and (2) a new Source
+   * that can be used to consume elements from the newly materialized Source.
+   */
+  def preMaterialize()(implicit materializer: Materializer): (Mat, ReprMat[Out, NotUsed]) = {
+    val (mat, pub) = toMat(Sink.asPublisher(fanout = true))(Keep.both).run()
+    (mat, Source.fromPublisher(pub))
+  }
 
   /**
    * Connect this `Source` to a `Sink` and run it. The returned value is the materialized value
@@ -183,7 +195,7 @@ final class Source[+Out, +Mat](
   /**
    * Converts this Scala DSL element to it's Java DSL counterpart.
    */
-  def asJava: javadsl.Source[Out, Mat] = new javadsl.Source(this)
+  def asJava[JOut >: Out, JMat >: Mat]: javadsl.Source[JOut, JMat] = new javadsl.Source(this)
 
   /**
    * Combines several sources with fan-in strategy like `Merge` or `Concat` and returns `Source`.
@@ -411,6 +423,16 @@ object Source {
     Source.fromGraph(new LazySource[T, M](create))
 
   /**
+   * Creates a `Source` from supplied future factory that is not called until downstream demand. When source gets
+   * materialized the materialized future is completed with the value from the factory. If downstream cancels or fails
+   * without any demand the create factory is never called and the materialized `Future` is failed.
+   *
+   * @see [[Source.lazily]]
+   */
+  def lazilyAsync[T](create: () ⇒ Future[T]): Source[T, Future[NotUsed]] =
+    lazily(() ⇒ fromFuture(create()))
+
+  /**
    * Creates a `Source` that is materialized as a [[org.reactivestreams.Subscriber]]
    */
   def asSubscriber[T]: Source[T, Subscriber[T]] =
@@ -427,6 +449,49 @@ object Source {
   def actorPublisher[T](props: Props): Source[T, ActorRef] = {
     require(classOf[ActorPublisher[_]].isAssignableFrom(props.actorClass()), "Actor must be ActorPublisher")
     fromGraph(new ActorPublisherSource(props, DefaultAttributes.actorPublisherSource, shape("ActorPublisherSource")))
+  }
+
+  /**
+   * INTERNAL API
+   *
+   * Creates a `Source` that is materialized as an [[akka.actor.ActorRef]].
+   * Messages sent to this actor will be emitted to the stream if there is demand from downstream,
+   * otherwise they will be buffered until request for demand is received.
+   *
+   * Depending on the defined [[akka.stream.OverflowStrategy]] it might drop elements if
+   * there is no space available in the buffer.
+   *
+   * The strategy [[akka.stream.OverflowStrategy.backpressure]] is not supported, and an
+   * IllegalArgument("Backpressure overflowStrategy not supported") will be thrown if it is passed as argument.
+   *
+   * The buffer can be disabled by using `bufferSize` of 0 and then received messages are dropped if there is no demand
+   * from downstream. When `bufferSize` is 0 the `overflowStrategy` does not matter. An async boundary is added after
+   * this Source; as such, it is never safe to assume the downstream will always generate demand.
+   *
+   * The stream can be completed successfully by sending the actor reference a message that is matched by
+   * `completionMatcher` in which case already buffered elements will be signaled before signaling
+   * completion, or by sending [[akka.actor.PoisonPill]] in which case completion will be signaled immediately.
+   *
+   * The stream can be completed with failure by sending a message that is matched by `failureMatcher`. The extracted
+   * [[Throwable]] will be used to fail the stream. In case the Actor is still draining its internal buffer (after having received
+   * a message matched by `completionMatcher`) before signaling completion and it receives a message matched by `failureMatcher`,
+   * the failure will be signaled downstream immediately (instead of the completion signal).
+   *
+   * The actor will be stopped when the stream is completed, failed or canceled from downstream,
+   * i.e. you can watch it to get notified when that happens.
+   *
+   * See also [[akka.stream.scaladsl.Source.queue]].
+   *
+   * @param bufferSize The size of the buffer in element count
+   * @param overflowStrategy Strategy that is used when incoming elements cannot fit inside the buffer
+   */
+  @InternalApi private[akka] def actorRef[T](
+    completionMatcher: PartialFunction[Any, Unit],
+    failureMatcher:    PartialFunction[Any, Throwable],
+    bufferSize:        Int, overflowStrategy: OverflowStrategy): Source[T, ActorRef] = {
+    require(bufferSize >= 0, "bufferSize must be greater than or equal to 0")
+    require(overflowStrategy != OverflowStrategies.Backpressure, "Backpressure overflowStrategy not supported")
+    fromGraph(new ActorRefSource(completionMatcher, failureMatcher, bufferSize, overflowStrategy, DefaultAttributes.actorRefSource, shape("ActorRefSource")))
   }
 
   /**
@@ -458,14 +523,18 @@ object Source {
    *
    * See also [[akka.stream.scaladsl.Source.queue]].
    *
+   *
    * @param bufferSize The size of the buffer in element count
    * @param overflowStrategy Strategy that is used when incoming elements cannot fit inside the buffer
    */
-  def actorRef[T](bufferSize: Int, overflowStrategy: OverflowStrategy): Source[T, ActorRef] = {
-    require(bufferSize >= 0, "bufferSize must be greater than or equal to 0")
-    require(overflowStrategy != OverflowStrategies.Backpressure, "Backpressure overflowStrategy not supported")
-    fromGraph(new ActorRefSource(bufferSize, overflowStrategy, DefaultAttributes.actorRefSource, shape("ActorRefSource")))
-  }
+  def actorRef[T](bufferSize: Int, overflowStrategy: OverflowStrategy): Source[T, ActorRef] =
+    actorRef(
+      {
+        case akka.actor.Status.Success    ⇒
+        case akka.actor.Status.Success(_) ⇒
+      },
+      { case akka.actor.Status.Failure(cause) ⇒ cause },
+      bufferSize, overflowStrategy)
 
   /**
    * Combines several sources with fan-in strategy like `Merge` or `Concat` and returns `Source`.
@@ -566,7 +635,7 @@ object Source {
    * `Restart` supervision strategy will close and create blocking IO again. Default strategy is `Stop` which means
    * that stream will be terminated on error in `read` function by default.
    *
-   * You can configure the default dispatcher for this Source by changing the `akka.stream.blocking-io-dispatcher` or
+   * You can configure the default dispatcher for this Source by changing the `akka.stream.materializer.blocking-io-dispatcher` or
    * set it for a given Source by using [[ActorAttributes]].
    *
    * Adheres to the [[ActorAttributes.SupervisionStrategy]] attribute.
@@ -589,7 +658,7 @@ object Source {
    * `Restart` supervision strategy will close and create resource. Default strategy is `Stop` which means
    * that stream will be terminated on error in `read` function (or future) by default.
    *
-   * You can configure the default dispatcher for this Source by changing the `akka.stream.blocking-io-dispatcher` or
+   * You can configure the default dispatcher for this Source by changing the `akka.stream.materializer.blocking-io-dispatcher` or
    * set it for a given Source by using [[ActorAttributes]].
    *
    * Adheres to the [[ActorAttributes.SupervisionStrategy]] attribute.
@@ -601,4 +670,5 @@ object Source {
    */
   def unfoldResourceAsync[T, S](create: () ⇒ Future[S], read: (S) ⇒ Future[Option[T]], close: (S) ⇒ Future[Done]): Source[T, NotUsed] =
     Source.fromGraph(new UnfoldResourceSourceAsync(create, read, close))
+
 }

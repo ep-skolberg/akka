@@ -1,18 +1,21 @@
 /*
- * Copyright (C) 2017-2018 Lightbend Inc. <http://www.lightbend.com/>
+ * Copyright (C) 2017-2018 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.cluster.sharding.typed
 
+import scala.concurrent.duration.FiniteDuration
+
 import akka.actor.NoSerializationVerificationNeeded
+import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
+import akka.cluster.ClusterSettings.DataCenter
 import akka.cluster.sharding.{ ClusterShardingSettings ⇒ UntypedShardingSettings }
 import akka.cluster.singleton.{ ClusterSingletonManagerSettings ⇒ UntypedClusterSingletonManagerSettings }
-import akka.actor.typed.ActorSystem
-import akka.cluster.typed.{ Cluster, ClusterSingletonManagerSettings }
+import akka.cluster.typed.Cluster
+import akka.cluster.typed.ClusterSingletonManagerSettings
 import com.typesafe.config.Config
-
-import scala.concurrent.duration.FiniteDuration
+import akka.util.JavaDurationConverters._
 
 object ClusterShardingSettings {
 
@@ -33,6 +36,7 @@ object ClusterShardingSettings {
   private[akka] def fromUntypedSettings(untypedSettings: UntypedShardingSettings): ClusterShardingSettings = {
     new ClusterShardingSettings(
       role = untypedSettings.role,
+      dataCenter = None,
       rememberEntities = untypedSettings.rememberEntities,
       journalPluginId = untypedSettings.journalPluginId,
       snapshotPluginId = untypedSettings.snapshotPluginId,
@@ -83,7 +87,7 @@ object ClusterShardingSettings {
 
   }
 
-  private def roleOption(role: String): Option[String] =
+  private def option(role: String): Option[String] =
     if (role == "" || role == null) None else Option(role)
 
   sealed trait StateStoreMode { def name: String }
@@ -145,21 +149,31 @@ object ClusterShardingSettings {
 
     def withBufferSize(value: Int): TuningParameters = copy(bufferSize = value)
     def withCoordinatorFailureBackoff(value: FiniteDuration): TuningParameters = copy(coordinatorFailureBackoff = value)
+    def withCoordinatorFailureBackoff(value: java.time.Duration): TuningParameters = withCoordinatorFailureBackoff(value.asScala)
     def withEntityRecoveryConstantRateStrategyFrequency(value: FiniteDuration): TuningParameters = copy(entityRecoveryConstantRateStrategyFrequency = value)
+    def withEntityRecoveryConstantRateStrategyFrequency(value: java.time.Duration): TuningParameters = withEntityRecoveryConstantRateStrategyFrequency(value.asScala)
     def withEntityRecoveryConstantRateStrategyNumberOfEntities(value: Int): TuningParameters = copy(entityRecoveryConstantRateStrategyNumberOfEntities = value)
     def withEntityRecoveryStrategy(value: java.lang.String): TuningParameters = copy(entityRecoveryStrategy = value)
     def withEntityRestartBackoff(value: FiniteDuration): TuningParameters = copy(entityRestartBackoff = value)
+    def withEntityRestartBackoff(value: java.time.Duration): TuningParameters = withEntityRestartBackoff(value.asScala)
     def withHandOffTimeout(value: FiniteDuration): TuningParameters = copy(handOffTimeout = value)
+    def withHandOffTimeout(value: java.time.Duration): TuningParameters = withHandOffTimeout(value.asScala)
     def withKeepNrOfBatches(value: Int): TuningParameters = copy(keepNrOfBatches = value)
     def withLeastShardAllocationMaxSimultaneousRebalance(value: Int): TuningParameters = copy(leastShardAllocationMaxSimultaneousRebalance = value)
     def withLeastShardAllocationRebalanceThreshold(value: Int): TuningParameters = copy(leastShardAllocationRebalanceThreshold = value)
     def withRebalanceInterval(value: FiniteDuration): TuningParameters = copy(rebalanceInterval = value)
+    def withRebalanceInterval(value: java.time.Duration): TuningParameters = withRebalanceInterval(value.asScala)
     def withRetryInterval(value: FiniteDuration): TuningParameters = copy(retryInterval = value)
+    def withRetryInterval(value: java.time.Duration): TuningParameters = withRetryInterval(value.asScala)
     def withShardFailureBackoff(value: FiniteDuration): TuningParameters = copy(shardFailureBackoff = value)
+    def withShardFailureBackoff(value: java.time.Duration): TuningParameters = withShardFailureBackoff(value.asScala)
     def withShardStartTimeout(value: FiniteDuration): TuningParameters = copy(shardStartTimeout = value)
+    def withShardStartTimeout(value: java.time.Duration): TuningParameters = withShardStartTimeout(value.asScala)
     def withSnapshotAfter(value: Int): TuningParameters = copy(snapshotAfter = value)
     def withUpdatingStateTimeout(value: FiniteDuration): TuningParameters = copy(updatingStateTimeout = value)
+    def withUpdatingStateTimeout(value: java.time.Duration): TuningParameters = withUpdatingStateTimeout(value.asScala)
     def withWaitingForStateTimeout(value: FiniteDuration): TuningParameters = copy(waitingForStateTimeout = value)
+    def withWaitingForStateTimeout(value: java.time.Duration): TuningParameters = withWaitingForStateTimeout(value.asScala)
 
     private def copy(
       bufferSize:                                         Int              = bufferSize,
@@ -198,13 +212,18 @@ object ClusterShardingSettings {
       waitingForStateTimeout = waitingForStateTimeout)
 
     override def toString =
-      s"""TuningParameters(${bufferSize},${coordinatorFailureBackoff},${entityRecoveryConstantRateStrategyFrequency},${entityRecoveryConstantRateStrategyNumberOfEntities},${entityRecoveryStrategy},${entityRestartBackoff},${handOffTimeout},${keepNrOfBatches},${leastShardAllocationMaxSimultaneousRebalance},${leastShardAllocationRebalanceThreshold},${rebalanceInterval},${retryInterval},${shardFailureBackoff},${shardStartTimeout},${snapshotAfter},${updatingStateTimeout},${waitingForStateTimeout})"""
+      s"""TuningParameters($bufferSize,$coordinatorFailureBackoff,$entityRecoveryConstantRateStrategyFrequency,$entityRecoveryConstantRateStrategyNumberOfEntities,$entityRecoveryStrategy,$entityRestartBackoff,$handOffTimeout,$keepNrOfBatches,$leastShardAllocationMaxSimultaneousRebalance,$leastShardAllocationRebalanceThreshold,$rebalanceInterval,$retryInterval,$shardFailureBackoff,$shardStartTimeout,$snapshotAfter,$updatingStateTimeout,$waitingForStateTimeout)"""
   }
 }
 
 /**
- * @param role specifies that this entity type requires cluster nodes with a specific role.
- *   If the role is not specified all nodes in the cluster are used.
+ * @param role Specifies that this entity type requires cluster nodes with a specific role.
+ *   If the role is not specified all nodes in the cluster are used. If the given role does
+ *   not match the role of the current node the `ShardRegion` will be started in proxy mode.
+ * @param dataCenter The data center of the cluster nodes where the cluster sharding is running.
+ *   If the dataCenter is not specified then the same data center as current node. If the given
+ *   dataCenter does not match the data center of the current node the `ShardRegion` will be started
+ *   in proxy mode.
  * @param rememberEntities true if active entity actors shall be automatically restarted upon `Shard`
  *   restart. i.e. if the `Shard` is started on a different `ShardRegion` due to rebalance or crash.
  * @param journalPluginId Absolute path to the journal plugin configuration entity that is to
@@ -219,6 +238,7 @@ object ClusterShardingSettings {
  */
 final class ClusterShardingSettings(
   val role:                         Option[String],
+  val dataCenter:                   Option[DataCenter],
   val rememberEntities:             Boolean,
   val journalPluginId:              String,
   val snapshotPluginId:             String,
@@ -226,20 +246,27 @@ final class ClusterShardingSettings(
   val tuningParameters:             ClusterShardingSettings.TuningParameters,
   val coordinatorSingletonSettings: ClusterSingletonManagerSettings) extends NoSerializationVerificationNeeded {
 
-  import akka.cluster.sharding.typed.ClusterShardingSettings.{ StateStoreModeDData, StateStoreModePersistence }
+  import akka.cluster.sharding.typed.ClusterShardingSettings.StateStoreModeDData
+  import akka.cluster.sharding.typed.ClusterShardingSettings.StateStoreModePersistence
   require(
     stateStoreMode == StateStoreModePersistence || stateStoreMode == StateStoreModeDData,
     s"Unknown 'state-store-mode' [$stateStoreMode], " +
       s"valid values are '${StateStoreModeDData.name}' or '${StateStoreModePersistence.name}'")
 
-  /** If true, this node should run the shard region, otherwise just a shard proxy should started on this node. */
+  /**
+   * INTERNAL API
+   * If true, this node should run the shard region, otherwise just a shard proxy should started on this node.
+   * It's checking if the `role` and `dataCenter` are matching.
+   */
   @InternalApi
   private[akka] def shouldHostShard(cluster: Cluster): Boolean =
-    role.isEmpty || cluster.selfMember.roles(role.get)
+    role.forall(cluster.selfMember.roles.contains) &&
+      dataCenter.forall(cluster.selfMember.dataCenter.contains)
 
-  def withRole(role: String): ClusterShardingSettings = copy(role = ClusterShardingSettings.roleOption(role))
+  def withRole(role: String): ClusterShardingSettings = copy(role = ClusterShardingSettings.option(role))
 
-  def withRole(role: Option[String]): ClusterShardingSettings = copy(role = role)
+  def withDataCenter(dataCenter: DataCenter): ClusterShardingSettings =
+    copy(dataCenter = ClusterShardingSettings.option(dataCenter))
 
   def withRememberEntities(rememberEntities: Boolean): ClusterShardingSettings =
     copy(rememberEntities = rememberEntities)
@@ -265,6 +292,7 @@ final class ClusterShardingSettings(
 
   private def copy(
     role:                         Option[String]                           = role,
+    dataCenter:                   Option[DataCenter]                       = dataCenter,
     rememberEntities:             Boolean                                  = rememberEntities,
     journalPluginId:              String                                   = journalPluginId,
     snapshotPluginId:             String                                   = snapshotPluginId,
@@ -273,6 +301,7 @@ final class ClusterShardingSettings(
     coordinatorSingletonSettings: ClusterSingletonManagerSettings          = coordinatorSingletonSettings): ClusterShardingSettings =
     new ClusterShardingSettings(
       role,
+      dataCenter,
       rememberEntities,
       journalPluginId,
       snapshotPluginId,

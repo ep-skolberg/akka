@@ -24,9 +24,9 @@ import akka.testkit.javadsl.TestKit;
 import akka.actor.typed.ActorRef;
 import akka.actor.typed.Behavior;
 import akka.cluster.ddata.typed.javadsl.Replicator.Command;
-import akka.actor.typed.javadsl.Actor;
+import akka.actor.typed.javadsl.Behaviors;
 import akka.actor.typed.javadsl.Adapter;
-import akka.actor.typed.javadsl.Actor.MutableBehavior;
+import akka.actor.typed.javadsl.MutableBehavior;
 import akka.actor.typed.javadsl.ActorContext;
 
 public class ReplicatorTest extends JUnitSuite {
@@ -95,21 +95,27 @@ public class ReplicatorTest extends JUnitSuite {
       this.replicator = replicator;
       this.node = node;
 
-      updateResponseAdapter = ctx.spawnAdapter(InternalUpdateResponse::new);
+      updateResponseAdapter = ctx.messageAdapter(
+          (Class<Replicator.UpdateResponse<GCounter>>) (Object) Replicator.UpdateResponse.class,
+          msg -> new InternalUpdateResponse(msg));
 
-      getResponseAdapter = ctx.spawnAdapter(InternalGetResponse::new);
+      getResponseAdapter = ctx.messageAdapter(
+          (Class<Replicator.GetResponse<GCounter>>) (Object) Replicator.GetResponse.class,
+          msg -> new InternalGetResponse(msg));
 
-      changedAdapter = ctx.spawnAdapter(InternalChanged::new);
+      changedAdapter = ctx.messageAdapter(
+          (Class<Replicator.Changed<GCounter>>) (Object) Replicator.Changed.class,
+          msg -> new InternalChanged(msg));
 
       replicator.tell(new Replicator.Subscribe<>(Key, changedAdapter));
     }
 
     public static Behavior<ClientCommand> create(ActorRef<Command> replicator, Cluster node) {
-      return Actor.mutable(ctx -> new Client(replicator, node, ctx));
+      return Behaviors.setup(ctx -> new Client(replicator, node, ctx));
     }
 
     @Override
-    public Actor.Receive<ClientCommand> createReceive() {
+    public Behaviors.Receive<ClientCommand> createReceive() {
       return receiveBuilder()
         .onMessage(Increment.class, cmd -> {
           replicator.tell(

@@ -1,7 +1,16 @@
 # Streams Quickstart Guide
 
-Create a project and add the akka-streams dependency to the build tool of your
-choice.
+## Dependency
+
+To use Akka Streams, add the module to your project:
+
+@@dependency[sbt,Maven,Gradle] {
+  group="com.typesafe.akka"
+  artifact="akka-stream_$scala.binary_version$"
+  version="$akka.version$"
+}
+
+## First steps
 
 A stream usually begins at a source, so this is also how we start an Akka
 Stream. Before we create one, we import the full complement of streaming tools:
@@ -112,8 +121,10 @@ called a `Sink`. `IOResult` is a type that IO operations return in
 Akka Streams in order to tell you how many bytes or elements were consumed and
 whether the stream terminated normally or exceptionally.
 
+### Browser-embedded example
 
-#### Here is another example that you can edit and run in the browser:
+<a name="here-is-another-example-that-you-can-edit-and-run-in-the-browser-"></a>
+Here is another example that you can edit and run in the browser:
 
 @@fiddle [TwitterStreamQuickstartDocSpec.scala]($code$/scala/docs/stream/TwitterStreamQuickstartDocSpec.scala) { #fiddle_code height=400px extraParams=theme=light&layout=v75&passive cssStyle=width:100%; }
 
@@ -175,10 +186,7 @@ All operations so far have been time-independent and could have been performed
 in the same fashion on strict collections of elements. The next line
 demonstrates that we are in fact dealing with streams that can flow at a
 certain speed: we use the `throttle` combinator to slow down the stream to 1
-element per second (the second `1` in the argument list is the maximum size
-of a burst that we want to allow—passing `1` means that the first element
-gets through immediately and the second then has to wait for one second and so
-on).
+element per second.
 
 If you run this program you will see one line printed per second. One aspect
 that is not immediately visible deserves mention, though: if you try and set

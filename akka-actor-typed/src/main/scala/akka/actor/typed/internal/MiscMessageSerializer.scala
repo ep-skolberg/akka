@@ -1,6 +1,7 @@
 /**
  * Copyright (C) 2009-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.actor.typed.internal
 
 import java.io.NotSerializableException
@@ -14,11 +15,12 @@ import akka.serialization.{ BaseSerializer, SerializerWithStringManifest }
 @InternalApi
 class MiscMessageSerializer(val system: akka.actor.ExtendedActorSystem) extends SerializerWithStringManifest with BaseSerializer {
 
-  private val resolver = ActorRefResolver(system.toTyped)
+  // Serializers are initialized early on. `toTyped` might then try to initialize the untyped ActorSystemAdapter extension.
+  private lazy val resolver = ActorRefResolver(system.toTyped)
   private val ActorRefManifest = "a"
 
   def manifest(o: AnyRef): String = o match {
-    case ref: ActorRef[_] ⇒ ActorRefManifest
+    case _: ActorRef[_] ⇒ ActorRefManifest
     case _ ⇒
       throw new IllegalArgumentException(s"Can't serialize object of type ${o.getClass} in [${getClass.getName}]")
   }

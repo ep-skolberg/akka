@@ -20,14 +20,18 @@ object AkkaBuild {
 
   lazy val buildSettings = Dependencies.Versions ++ Seq(
     organization := "com.typesafe.akka",
-    version := "2.5.9-dg-1.0.0"
+    // use the same value as in the build scope, so it can be overriden by stampVersion
+    //version := (version in ThisBuild).value
+        version := "2.5.12-dg-1.0.0"
   )
 
   lazy val rootSettings = Release.settings ++
     UnidocRoot.akkaSettings ++
     Formatting.formatSettings ++
     Protobuf.settings ++ Seq(
-      parallelExecution in GlobalScope := System.getProperty("akka.parallelExecution", parallelExecutionByDefault.toString).toBoolean)
+      parallelExecution in GlobalScope := System.getProperty("akka.parallelExecution", parallelExecutionByDefault.toString).toBoolean,
+      version in ThisBuild := "2.5.12"
+    )
 
   lazy val mayChangeSettings = Seq(
     description := """|This module of Akka is marked as

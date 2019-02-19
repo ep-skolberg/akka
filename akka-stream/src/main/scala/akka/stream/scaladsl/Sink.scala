@@ -1,11 +1,13 @@
 /**
  * Copyright (C) 2014-2018 Lightbend Inc. <https://www.lightbend.com>
  */
+
 package akka.stream.scaladsl
 
 import akka.{ Done, NotUsed }
 import akka.dispatch.ExecutionContexts
 import akka.actor.{ ActorRef, Props, Status }
+import akka.annotation.InternalApi
 import akka.stream.actor.ActorSubscriber
 import akka.stream.impl.Stages.DefaultAttributes
 import akka.stream.impl._
@@ -58,6 +60,17 @@ final class Sink[-In, +Mat](
       shape)
 
   /**
+   * Materializes this Sink, immediately returning (1) its materialized value, and (2) a new Sink
+   * that can be consume elements 'into' the pre-materialized one.
+   *
+   * Useful for when you need a materialized value of a Sink when handing it out to someone to materialize it for you.
+   */
+  def preMaterialize()(implicit materializer: Materializer): (Mat, Sink[In, NotUsed]) = {
+    val (sub, mat) = Source.asSubscriber.toMat(this)(Keep.both).run()
+    (mat, Sink.fromSubscriber(sub))
+  }
+
+  /**
    * Replace the attributes of this [[Sink]] with the given ones. If this Sink is a composite
    * of multiple graphs, new attributes on the composite will be less specific than attributes
    * set directly on the individual graphs of the composite.
@@ -106,7 +119,7 @@ final class Sink[-In, +Mat](
   /**
    * Converts this Scala DSL element to it's Java DSL counterpart.
    */
-  def asJava: javadsl.Sink[In, Mat] = new javadsl.Sink(this)
+  def asJava[JIn <: In, JMat >: Mat]: javadsl.Sink[JIn, JMat] = new javadsl.Sink(this)
 }
 
 object Sink {
@@ -369,6 +382,27 @@ object Sink {
   }
 
   /**
+   * INTERNAL API
+   *
+   * Sends the elements of the stream to the given `ActorRef`.
+   * If the target actor terminates the stream will be canceled.
+   * When the stream is completed successfully the given `onCompleteMessage`
+   * will be sent to the destination actor.
+   * When the stream is completed with failure the `onFailureMessage` will be invoked
+   * and its result will be sent to the destination actor.
+   *
+   * It will request at most `maxInputBufferSize` number of elements from
+   * upstream, but there is no back-pressure signal from the destination actor,
+   * i.e. if the actor is not consuming the messages fast enough the mailbox
+   * of the actor will grow. For potentially slow consumer actors it is recommended
+   * to use a bounded mailbox with zero `mailbox-push-timeout-time` or use a rate
+   * limiting stage in front of this `Sink`.
+   */
+  @InternalApi private[akka] def actorRef[T](ref: ActorRef, onCompleteMessage: Any, onFailureMessage: Throwable ⇒ Any): Sink[T, NotUsed] =
+    fromGraph(new ActorRefSink(ref, onCompleteMessage, onFailureMessage,
+      DefaultAttributes.actorRefSink, shape("ActorRefSink")))
+
+  /**
    * Sends the elements of the stream to the given `ActorRef`.
    * If the target actor terminates the stream will be canceled.
    * When the stream is completed successfully the given `onCompleteMessage`
@@ -384,7 +418,33 @@ object Sink {
    * limiting stage in front of this `Sink`.
    */
   def actorRef[T](ref: ActorRef, onCompleteMessage: Any): Sink[T, NotUsed] =
-    fromGraph(new ActorRefSink(ref, onCompleteMessage, DefaultAttributes.actorRefSink, shape("ActorRefSink")))
+    fromGraph(new ActorRefSink(ref, onCompleteMessage, t ⇒ Status.Failure(t),
+      DefaultAttributes.actorRefSink, shape("ActorRefSink")))
+
+  /**
+   * INTERNAL API
+   *
+   * Sends the elements of the stream to the given `ActorRef` that sends back back-pressure signal.
+   * First element is created by calling `onInitMessage` with an `ActorRef` of the actor that
+   * expects acknowledgements. Then stream is waiting for acknowledgement message
+   * `ackMessage` from the given actor which means that it is ready to process
+   * elements. It also requires `ackMessage` message after each stream element
+   * to make backpressure work.
+   *
+   * Every message that is sent to the actor is first transformed using `messageAdapter`.
+   * This can be used to capture the ActorRef of the actor that expects acknowledgments as
+   * well as transforming messages from the stream to the ones that actor under `ref` handles.
+   *
+   * If the target actor terminates the stream will be canceled.
+   * When the stream is completed successfully the given `onCompleteMessage`
+   * will be sent to the destination actor.
+   * When the stream is completed with failure - result of `onFailureMessage(throwable)`
+   * function will be sent to the destination actor.
+   */
+  @InternalApi private[akka] def actorRefWithAck[T](ref: ActorRef, messageAdapter: ActorRef ⇒ T ⇒ Any,
+                                                    onInitMessage: ActorRef ⇒ Any, ackMessage: Any, onCompleteMessage: Any,
+                                                    onFailureMessage: (Throwable) ⇒ Any): Sink[T, NotUsed] =
+    Sink.fromGraph(new ActorRefBackpressureSinkStage(ref, messageAdapter, onInitMessage, ackMessage, onCompleteMessage, onFailureMessage))
 
   /**
    * Sends the elements of the stream to the given `ActorRef` that sends back back-pressure signal.
@@ -398,10 +458,11 @@ object Sink {
    * will be sent to the destination actor.
    * When the stream is completed with failure - result of `onFailureMessage(throwable)`
    * function will be sent to the destination actor.
+   *
    */
   def actorRefWithAck[T](ref: ActorRef, onInitMessage: Any, ackMessage: Any, onCompleteMessage: Any,
                          onFailureMessage: (Throwable) ⇒ Any = Status.Failure): Sink[T, NotUsed] =
-    Sink.fromGraph(new ActorRefBackpressureSinkStage(ref, onInitMessage, ackMessage, onCompleteMessage, onFailureMessage))
+    actorRefWithAck(ref, _ ⇒ identity, _ ⇒ onInitMessage, ackMessage, onCompleteMessage, onFailureMessage)
 
   /**
    * Creates a `Sink` that is materialized to an [[akka.actor.ActorRef]] which points to an Actor
@@ -440,15 +501,26 @@ object Sink {
    * Creates a real `Sink` upon receiving the first element. Internal `Sink` will not be created if there are no elements,
    * because of completion or error.
    *
-   * If `sinkFactory` throws an exception and the supervision decision is
-   * [[akka.stream.Supervision.Stop]] the `Future` will be completed with failure. For all other supervision options it will
-   * try to create sink with next element
-   *
-   * `fallback` will be executed when there was no elements and completed is received from upstream.
-   *
-   * Adheres to the [[ActorAttributes.SupervisionStrategy]] attribute.
+   * If upstream completes before an element was received then the `Future` is completed with the value created by fallback.
+   * If upstream fails before an element was received, `sinkFactory` throws an exception, or materialization of the internal
+   * sink fails then the `Future` is completed with the exception.
+   * Otherwise the `Future` is completed with the materialized value of the internal sink.
    */
+  @Deprecated
+  @deprecated("Use lazyInitAsync instead. (lazyInitAsync no more needs a fallback function and the materialized value more clearly indicates if the internal sink was materialized or not.)", "2.5.11")
   def lazyInit[T, M](sinkFactory: T ⇒ Future[Sink[T, M]], fallback: () ⇒ M): Sink[T, Future[M]] =
-    Sink.fromGraph(new LazySink(sinkFactory, fallback))
+    Sink.fromGraph(new LazySink[T, M](sinkFactory)).mapMaterializedValue(_.map(_.getOrElse(fallback()))(ExecutionContexts.sameThreadExecutionContext))
+
+  /**
+   * Creates a real `Sink` upon receiving the first element. Internal `Sink` will not be created if there are no elements,
+   * because of completion or error.
+   *
+   * If upstream completes before an element was received then the `Future` is completed with `None`.
+   * If upstream fails before an element was received, `sinkFactory` throws an exception, or materialization of the internal
+   * sink fails then the `Future` is completed with the exception.
+   * Otherwise the `Future` is completed with the materialized value of the internal sink.
+   */
+  def lazyInitAsync[T, M](sinkFactory: () ⇒ Future[Sink[T, M]]): Sink[T, Future[Option[M]]] =
+    Sink.fromGraph(new LazySink[T, M](_ ⇒ sinkFactory()))
 
 }
