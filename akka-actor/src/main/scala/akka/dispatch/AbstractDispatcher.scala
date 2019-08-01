@@ -95,7 +95,7 @@ abstract class MessageDispatcher(val configurator: MessageDispatcherConfigurator
   @volatile private[this] var _shutdownScheduleDoNotCallMeDirectly: Int = _ // DO NOT TOUCH!
 
   private final def addInhabitants(add: Long): Long = {
-    val old = Unsafe.getAndAddLong(Unsafe.instance, this, inhabitantsOffset, add)
+    val old = Unsafe.instance.getAndAddLong(this, inhabitantsOffset, add)
     val ret = old + add
 
     if (ret < 0) {

@@ -2,13 +2,13 @@ name := "akka-sample-camel-scala"
 
 isSnapshot := false
 
-version := "2.4.19-dg-1.2.0" + (if (isSnapshot.value) "-SNAPSHOT" else "")
+version := "2.4.19-dg-1.2.1" + (if (isSnapshot.value) "-SNAPSHOT" else "")
 
 scalaVersion := "2.11.8"
 
 libraryDependencies ++= Seq(
-  "com.typesafe.akka" %% "akka-actor" % ("2.4.19-dg-1.2.0" + (if (isSnapshot.value) "-SNAPSHOT" else "")),
-  "com.typesafe.akka" %% "akka-camel" % ("2.4.19-dg-1.2.0" + (if (isSnapshot.value) "-SNAPSHOT" else "")),
+  "com.typesafe.akka" %% "akka-actor" % ("2.4.19-dg-1.2.1" + (if (isSnapshot.value) "-SNAPSHOT" else "")),
+  "com.typesafe.akka" %% "akka-camel" % ("2.4.19-dg-1.2.1" + (if (isSnapshot.value) "-SNAPSHOT" else "")),
   "org.apache.camel" % "camel-jetty" % "2.13.4",
   "org.apache.camel" % "camel-quartz" % "2.13.4",
   "org.slf4j" % "slf4j-api" % "1.7.16",
