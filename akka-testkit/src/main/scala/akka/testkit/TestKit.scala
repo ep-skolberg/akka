@@ -618,6 +618,20 @@ trait TestKitBase {
   }
 
   /**
+   * Same as expectNoMsg() but for compatibility with the akka 2.5 API (which deprecates expectNoMsg()).
+   */
+  def expectNoMessage(): Unit = {
+    expectNoMsg()
+  }
+
+  /**
+   * Same as expectNoMsg(FiniteDuration) but for compatibility with the akka 2.5 API (which deprecates expectNoMsg()).
+   */
+  def expectNoMessage(max: FiniteDuration): Unit = {
+    expectNoMsg(max)
+  }
+
+  /**
    * Receive a series of messages until one does not match the given partial
    * function or the idle timeout is met (disabled by default) or the overall
    * maximum duration is elapsed or expected messages count is reached.
