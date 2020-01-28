@@ -25,6 +25,7 @@ import akka.util.ByteString
 import scala.collection.immutable
 import scala.concurrent.duration.{ Duration, FiniteDuration }
 import scala.concurrent.{ Future, Promise }
+import scala.util.Try
 
 /**
  * INTERNAL API
@@ -290,11 +291,14 @@ private[stream] object ConnectionSourceStage {
 
       override def onUpstreamFailure(ex: Throwable): Unit = {
         if (connection != null) {
-          if (interpreter.log.isDebugEnabled) {
+          if (interpreter.log.isWarningEnabled) {
             val msg = "Aborting tcp connection to {} because of upstream failure: {}"
+            // Note: getStackTrace() may fail with a NullPointerException on Android if the native stack trace
+            // can not be acquired. In that case we default to an empty stack trace.
+            val stackTrace = Try(ex.getStackTrace).filter(_ != null).getOrElse(Array.empty[StackTraceElement])
 
-            if (ex.getStackTrace.isEmpty) interpreter.log.debug(msg, remoteAddress, ex.getMessage)
-            else interpreter.log.debug(msg + "\n{}", remoteAddress, ex.getMessage, ex.getStackTrace.mkString("\n"))
+            if (stackTrace.isEmpty) interpreter.log.warning(msg, remoteAddress, ex.getMessage)
+            else interpreter.log.warning(msg + "\n{}", remoteAddress, ex.getMessage, stackTrace.mkString("\n"))
           }
           connection ! Abort
         } else failStage(ex)
