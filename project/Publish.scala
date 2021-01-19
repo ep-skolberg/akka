@@ -17,11 +17,11 @@ object Publish extends AutoPlugin {
   override def trigger = allRequirements
 
   override lazy val projectSettings = Seq(
-    publishTo := Some(akkaPublishTo.value),
+    publishTo := artifactoryRepo(version.value),
     publishRsyncHost := "akkarepo@gustav.akka.io",
-    credentials ++= akkaCredentials,
-    organizationName := "Lightbend Inc.",
-    organizationHomepage := Some(url("https://www.lightbend.com")),
+    credentials += Credentials(Path.userHome / ".ivy2" / ".credentials"),
+    organizationName := "DASGIP",
+    organizationHomepage := Some(url("https://www.dasgip.de")),
     startYear := Some(2009),
     developers := List(
         Developer(
@@ -35,18 +35,18 @@ object Publish extends AutoPlugin {
     },
     defaultPublishTo := target.value / "repository")
 
-  private def akkaPublishTo = Def.setting {
-    val key = new java.io.File(
-      Option(System.getProperty("akka.gustav.key"))
-        .getOrElse(System.getProperty("user.home") + "/.ssh/id_rsa_gustav.pem"))
-    if (isSnapshot.value)
-      Resolver.sftp("Akka snapshots", "gustav.akka.io", "/home/akkarepo/www/snapshots").as("akkarepo", key)
-    else
-      Opts.resolver.sonatypeStaging
+  private def artifactoryRepo(version: String): Option[Resolver] = {
+    if (version.endsWith("-SNAPSHOT")) {
+      None
+    } else {
+      Some(
+        Resolver.url(
+          "Artifactory third party library releases",
+          new URL(s"http://artifactory.zentrale.local/ext-release-local")
+        )(Resolver.mavenStylePatterns)
+      )
+    }
   }
-
-  private def akkaCredentials: Seq[Credentials] =
-    Option(System.getProperty("akka.publish.credentials")).map(f => Credentials(new File(f))).toSeq
 }
 
 /**
