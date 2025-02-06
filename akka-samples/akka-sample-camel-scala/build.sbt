@@ -2,7 +2,7 @@ name := "akka-sample-camel-scala"
 
 isSnapshot := false
 
-version := "2.4.19-dg-1.2.1" + (if (isSnapshot.value) "-SNAPSHOT" else "")
+version := "2.4.19-dg-1.2.4" + (if (isSnapshot.value) "-SNAPSHOT" else "")
 
 scalaVersion := "2.11.8"
 
