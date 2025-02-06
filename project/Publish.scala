@@ -45,7 +45,7 @@ object Publish extends AutoPlugin {
 
   def artifactoryPublishTo: Resolver = Resolver.url(
     "Artifactory third party library releases",
-    new URL(s"http://artifactory.zentrale.local/ext-release-local")
+    new URL(s"https://artifacts.ep-dev.net/artifactory/bpc_mvn_release")
   )(Resolver.mavenStylePatterns)
 
   private def localRepo(repository: File): Option[Resolver] =

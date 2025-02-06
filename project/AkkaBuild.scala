@@ -33,7 +33,7 @@ object AkkaBuild extends Build {
   lazy val buildSettings = Dependencies.Versions ++ Seq(
     organization        := "com.typesafe.akka",
     isSnapshot          := false,
-    version             := "2.4.19-dg-1.2.3" + (if (isSnapshot.value) "-SNAPSHOT" else "")
+    version             := "2.4.19-dg-1.2.4" + (if (isSnapshot.value) "-SNAPSHOT" else "")
   )
 
   lazy val rootSettings = parentSettings ++ Release.settings ++

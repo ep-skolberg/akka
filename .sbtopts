@@ -1,3 +1,4 @@
 -Dsbt.override.build.repos=true
 -Dsbt.repository.config=./repositories
 -Dsbt.boot.credentials=$HOME/.ivy2/.credentials
+-Dakka.scaladoc.diagrams=false

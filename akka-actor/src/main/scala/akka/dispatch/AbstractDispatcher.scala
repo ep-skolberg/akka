@@ -95,7 +95,7 @@ abstract class MessageDispatcher(val configurator: MessageDispatcherConfigurator
   @volatile private[this] var _shutdownScheduleDoNotCallMeDirectly: Int = _ // DO NOT TOUCH!
 
   private final def addInhabitants(add: Long): Long = {
-    val old = Unsafe.instance.getAndAddLong(this, inhabitantsOffset, add)
+    val old = AbstractMessageDispatcher.inhabitantsOffset.getAndAdd(add)
     val ret = old + add
 
     if (ret < 0) {
@@ -108,7 +108,7 @@ abstract class MessageDispatcher(val configurator: MessageDispatcherConfigurator
     ret
   }
 
-  final def inhabitants: Long = Unsafe.instance.getLongVolatile(this, inhabitantsOffset)
+  final def inhabitants: Long = inhabitantsOffset.get()
 
   private final def shutdownSchedule: Int = Unsafe.instance.getIntVolatile(this, shutdownScheduleOffset)
   private final def updateShutdownSchedule(expect: Int, update: Int): Boolean = Unsafe.instance.compareAndSwapInt(this, shutdownScheduleOffset, expect, update)
